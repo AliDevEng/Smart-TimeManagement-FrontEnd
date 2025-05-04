@@ -1,0 +1,228 @@
+:root {
+    --primary-color: #4CAF50;
+    --secondary-color: #8BC34A;
+    --accent-color: #CDDC39;
+    --dark-color: #2E7D32;
+    --light-color: #C8E6C9;
+    --background-color: #F1F8E9;
+    --text-color: #333;
+    --border-color: #DDD;
+    --light-blue: #42A5F5;  /* Ljusblå färg tillagd */
+}
+
+body {
+    background-color: var(--background-color);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: var(--text-color);
+}
+
+.navbar {
+    background-color: var(--primary-color);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.navbar-brand {
+    font-weight: bold;
+    font-size: 1.5rem;
+}
+
+.card {
+    border: none;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+.card-header {
+    background-color: var(--secondary-color);
+    color: white;
+    font-weight: bold;
+    border-bottom: none;
+}
+
+.btn-primary {
+    background-color: var(--primary-color);
+    border-color: var(--dark-color);
+    padding: 8px 20px;
+}
+
+.btn-primary:hover {
+    background-color: var(--dark-color);
+    border-color: var(--primary-color);
+}
+
+/* Ljusblå knappar för arbetsdagsregistrering */
+.btn-workday {
+    background-color: var(--light-blue);
+    border-color: #1976D2;
+    color: white;
+}
+
+.btn-workday:hover {
+    background-color: #1976D2;
+    color: white;
+}
+
+.btn-secondary {
+    background-color: var(--accent-color);
+    border-color: var(--secondary-color);
+    color: var(--text-color);
+}
+
+.btn-secondary:hover {
+    background-color: var(--secondary-color);
+    color: white;
+}
+
+.tab-content {
+    background-color: white;
+    padding: 20px;
+    border-radius: 0 0 5px 5px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    border: 1px solid var(--border-color);
+    border-top: none;
+}
+
+.nav-tabs {
+    border-bottom: 1px solid var(--border-color);
+}
+
+.nav-tabs .nav-link.active {
+    background-color: var(--secondary-color);
+    color: white;
+    border-color: var(--border-color) var(--border-color) var(--secondary-color);
+}
+
+.nav-tabs .nav-link {
+    color: var(--dark-color);
+    font-weight: 500;
+    padding: 10px 20px;
+}
+
+.nav-tabs .nav-link:hover {
+    border-color: var(--border-color) var(--border-color) var(--primary-color);
+}
+
+.table {
+    margin-top: 15px;
+}
+
+.table th {
+    background-color: var(--light-color);
+    border-top: none;
+}
+
+/* Tidväljare med 15-minutersintervall */
+.time-input {
+    width: 100px;
+    display: inline-block;
+}
+
+/* Anpassning för tidinputs */
+input[type="time"] {
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
+/* Justera steg för 15-minutersintervall */
+input[type="time"]::-webkit-datetime-edit-minute-field {
+    color: green;
+}
+
+input[type="time"]::-webkit-datetime-edit-ampm-field {
+    color: green;
+}
+
+/* Checkbox-styling för utrustning */
+.equipment-checkbox {
+    margin-right: 15px;
+    margin-bottom: 10px;
+}
+
+.form-control, .form-select {
+    border: 1px solid var(--border-color);
+    padding: 8px 12px;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 0.25rem rgba(141, 194, 111, 0.25);
+}
+
+.modal-header {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+/* Anpassning för våra nya select-element */
+.form-control.start-time,
+.form-control.end-time,
+.form-control.lunch-minutes {
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: white;
+}
+
+/* Hover-effekt */
+.form-control.start-time:hover,
+.form-control.end-time:hover,
+.form-control.lunch-minutes:hover {
+    border-color: var(--accent-color);
+}
+
+.remove-employee {
+    padding: 3px 8px;
+    font-size: 0.8rem;
+    margin-left: 5px;
+}
+
+/* Gör tabellceller lite kompaktare */
+#employee-time-table td {
+    padding: 8px 10px;
+}
+
+/* Klickbara rader */
+.task-row:hover,
+.workday-row:hover {
+    background-color: var(--light-color);
+    cursor: pointer;
+}
+
+/* Modal-storlekar */
+.modal-lg {
+    max-width: 90%;
+}
+
+.modal-xl {
+    max-width: 95%;
+}
+
+/* Redigeringsformulär */
+#edit-day-form .edit-employee-row td {
+    padding: 8px 5px;
+    vertical-align: middle;
+}
+
+.btn-workday {
+    margin-right: 10px;
+}
+
+/* Bekräftelsedialoger */
+
+/* Responsiva anpassningar */
+@media (max-width: 768px) {
+    .nav-tabs .nav-link {
+        padding: 8px 12px;
+        font-size: 0.9rem;
+    }
+    
+    .btn-primary, .btn-secondary, .btn-workday {
+        padding: 6px 12px;
+        font-size: 0.9rem;
+    }
+    
+    .form-control, .form-select {
+        padding: 6px 10px;
+    }
+}

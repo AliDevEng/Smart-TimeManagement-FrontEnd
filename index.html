@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Tidsrapportering</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="style.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="#">Smart Tidsrapportering</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <ul class="nav nav-tabs" id="myTab" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="new-task-tab" data-bs-toggle="tab" data-bs-target="#new-task" type="button" role="tab">Nytt uppdrag</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="register-day-tab" data-bs-toggle="tab" data-bs-target="#register-day" type="button" role="tab">Registrera arbetsdag</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="employees-tab" data-bs-toggle="tab" data-bs-target="#employees" type="button" role="tab">Medarbetare</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="equipment-tab" data-bs-toggle="tab" data-bs-target="#equipment" type="button" role="tab">Utrustning</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="reports-tab" data-bs-toggle="tab" data-bs-target="#reports" type="button" role="tab">Rapporter</button>
+            </li>
+        </ul>
+
+        <div class="tab-content" id="myTabContent">
+            <!-- Nytt uppdrag -->
+            <div class="tab-pane fade show active" id="new-task" role="tabpanel">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                Skapa nytt uppdrag
+                            </div>
+                            <div class="card-body">
+                                <form id="new-task-form">
+                                    <div class="mb-3">
+                                        <label for="task-number" class="form-label">Uppdragsnummer</label>
+                                        <input type="text" class="form-control" id="task-number" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="customer" class="form-label">Kund</label>
+                                        <select class="form-select" id="customer" required>
+                                            <option value="" selected disabled>Välj kund</option>
+                                            <!-- Customers will be loaded here -->
+                                        </select>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary mt-2" data-bs-toggle="modal" data-bs-target="#addCustomerModal">
+                                            Lägg till ny kund
+                                        </button>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="task-description" class="form-label">Beskrivning</label>
+                                        <textarea class="form-control" id="task-description" rows="3"></textarea>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">Skapa uppdrag</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                Aktiva uppdrag
+                            </div>
+                            <div class="card-body">
+                                <table class="table table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>Nummer</th>
+                                            <th>Kund</th>
+                                            <th>Startdatum</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="active-tasks">
+                                        <!-- Active tasks will be loaded here -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Registrera arbetsdag -->
+            <div class="tab-pane fade" id="register-day" role="tabpanel">
+                <div class="card">
+                    <div class="card-header">
+                        Registrera arbetsdag
+                    </div>
+                    <div class="card-body">
+                        <form id="register-day-form">
+                            <div class="row mb-3">
+                                <div class="col-md-4">
+                                    <label for="work-date" class="form-label">Datum</label>
+                                    <input type="date" class="form-control" id="work-date" required>
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="task-select" class="form-label">Uppdrag</label>
+                                    <select class="form-select" id="task-select" required>
+                                        <option value="" selected disabled>Välj uppdrag</option>
+                                        <!-- Tasks will be loaded here -->
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="supervisor-select" class="form-label">Arbetsledare</label>
+                                    <select class="form-select" id="supervisor-select">
+                                        <option value="none" selected>Ingen</option>
+                                        <!-- Employees will be loaded here -->
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Utrustning</label>
+                                <div id="equipment-container">
+                                    <!-- Equipment checkboxes will be added here -->
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <h5>Medarbetare</h5>
+                                <table class="table" id="employee-time-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Namn</th>
+                                            <th>Starttid</th>
+                                            <th>Sluttid</th>
+                                            <th>Lunch (min)</th>
+                                            <th>Förare</th>
+                                            <th>Körtid (tim)</th>
+                                            <th>Arbetad tid</th>
+                                            <th>Åtgärd</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Employees will be added here -->
+                                    </tbody>
+                                </table>
+                                <button type="button" class="btn btn-workday" id="add-employee-btn">Ny medarbetare</button>
+                                <button type="button" class="btn btn-workday" id="same-start-btn">Start samtidigt</button>
+                                <button type="button" class="btn btn-workday" id="same-end-btn">Slut samtidigt</button>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary">Spara arbetsdag</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Medarbetare -->
+            <div class="tab-pane fade" id="employees" role="tabpanel">
+                <div class="card">
+                    <div class="card-header">
+                        Medarbetare
+                    </div>
+                    <div class="card-body">
+                        <button type="button" class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#addEmployeeModal">
+                            Lägg till medarbetare
+                        </button>
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Namn</th>
+                                    <th>Telefon</th>
+                                    <th>Åtgärder</th>
+                                </tr>
+                            </thead>
+                            <tbody id="employees-table">
+                                <!-- Employees will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Utrustning -->
+            <div class="tab-pane fade" id="equipment" role="tabpanel">
+                <div class="card">
+                    <div class="card-header">
+                        Utrustning
+                    </div>
+                    <div class="card-body">
+                        <form id="new-equipment-form" class="mb-4">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="equipment-name" class="form-label">Namn</label>
+                                    <input type="text" class="form-control" id="equipment-name" required>
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="equipment-price" class="form-label">Dagspris (SEK)</label>
+                                    <input type="number" class="form-control" id="equipment-price" required>
+                                </div>
+                                <div class="col-md-2 d-flex align-items-end">
+                                    <button type="submit" class="btn btn-primary">Lägg till</button>
+                                </div>
+                            </div>
+                        </form>
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Namn</th>
+                                    <th>Dagspris</th>
+                                    <th>Åtgärder</th>
+                                </tr>
+                            </thead>
+                            <tbody id="equipment-table">
+                                <!-- Equipment will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rapporter -->
+            <div class="tab-pane fade" id="reports" role="tabpanel">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                Sök arbetstid
+                            </div>
+                            <div class="card-body">
+                                <form id="search-time-form">
+                                    <div class="mb-3">
+                                        <label class="form-label">Sök efter:</label>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="radio" name="searchType" id="search-employee" value="employee" checked>
+                                            <label class="form-check-label" for="search-employee">
+                                                Medarbetare
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="radio" name="searchType" id="search-customer" value="customer">
+                                            <label class="form-check-label" for="search-customer">
+                                                Kund
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3" id="employee-search-container">
+                                        <label for="employee-select" class="form-label">Medarbetare</label>
+                                        <select class="form-select" id="employee-select">
+                                            <!-- Employees will be loaded here -->
+                                        </select>
+                                    </div>
+                                    <div class="mb-3 d-none" id="customer-search-container">
+                                        <label for="report-customer-select" class="form-label">Kund</label>
+                                        <select class="form-select" id="report-customer-select">
+                                            <!-- Customers will be loaded here -->
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="report-date" class="form-label">Datum</label>
+                                        <input type="date" class="form-control" id="report-date">
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">Sök</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                Månadsrapport
+                            </div>
+                            <div class="card-body">
+                                <form id="monthly-report-form">
+                                    <div class="mb-3">
+                                        <label for="report-month" class="form-label">Månad</label>
+                                        <input type="month" class="form-control" id="report-month" required>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">Generera rapport</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card mt-4">
+                    <div class="card-header">
+                        Resultat
+                    </div>
+                    <div class="card-body">
+                        <div id="report-results">
+                            <!-- Report results will be displayed here -->
+                            <p class="text-muted">Ange sökkriterier för att visa resultat.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Customer Modal -->
+    <div class="modal fade" id="addCustomerModal" tabindex="-1" aria-labelledby="addCustomerModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addCustomerModalLabel">Lägg till ny kund</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="add-customer-form">
+                        <div class="mb-3">
+                            <label for="customer-name" class="form-label">Namn</label>
+                            <input type="text" class="form-control" id="customer-name" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="customer-phone" class="form-label">Telefon</label>
+                            <input type="tel" class="form-control" id="customer-phone">
+                        </div>
+                        <div class="mb-3">
+                            <label for="customer-address" class="form-label">Adress</label>
+                            <input type="text" class="form-control" id="customer-address">
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Avbryt</button>
+                    <button type="button" class="btn btn-primary" id="save-customer-btn">Spara</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Employee Modal -->
+    <div class="modal fade" id="addEmployeeModal" tabindex="-1" aria-labelledby="addEmployeeModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addEmployeeModalLabel">Lägg till medarbetare</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="add-employee-form">
+                        <div class="mb-3">
+                            <label for="employee-name" class="form-label">Namn</label>
+                            <input type="text" class="form-control" id="employee-name" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="employee-phone" class="form-label">Telefon</label>
+                            <input type="tel" class="form-control" id="employee-phone">
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Avbryt</button>
+                    <button type="button" class="btn btn-primary" id="save-employee-btn">Spara</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Task Details Modal -->
+<div class="modal fade" id="taskDetailsModal" tabindex="-1" aria-labelledby="taskDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="taskDetailsModalLabel">Uppdragsdetaljer</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="taskDetailsModalContent">
+                <!-- Innehåll laddas dynamiskt -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Stäng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Day Details Modal -->
+<div class="modal fade" id="dayDetailsModal" tabindex="-1" aria-labelledby="dayDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="dayDetailsModalLabel">Detaljer för arbetsdag</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="dayDetailsModalContent">
+                <!-- Innehåll laddas dynamiskt -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Stäng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Day Modal -->
+<div class="modal fade" id="editDayModal" tabindex="-1" aria-labelledby="editDayModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editDayModalLabel">Redigera arbetsdag</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="editDayModalContent">
+                <!-- Innehåll laddas dynamiskt -->
+            </div>
+        </div>
+    </div>
+</div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
