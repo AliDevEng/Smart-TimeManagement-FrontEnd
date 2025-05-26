@@ -31,7 +31,6 @@ public class Equipment {
      * Dagspriset för denna utrustning i svenska kronor.
      * Vi använder BigDecimal istället för double för att undvika
      * avrundningsfel som kan uppstå vid ekonomiska beräkningar.
-     *
      * BigDecimal säkerställer exakt precision för penningbelopp,
      * vilket är kritiskt för korrekt fakturering och kostnadskalkylering.
      */
@@ -141,7 +140,6 @@ public class Equipment {
     /**
      * Beräknar kostnaden för att använda denna utrustning under
      * ett specificerat antal dagar.
-     *
      * @param days Antal dagar som utrustningen används
      * @return Total kostnad som BigDecimal
      */
@@ -171,16 +169,14 @@ public class Equipment {
         this.isActive = false;
     }
 
-    /**
-     * Reaktiverar tidigare inaktiverad utrustning.
-     */
+
+    // Reaktiverar tidigare inaktiverad utrustning.
     public void reactivate() {
         this.isActive = true;
     }
 
-    /**
-     * Formaterar dagspriset som en läsbar sträng med valuta
-     */
+
+    // Formaterar dagspriset som en läsbar sträng med valuta
     public String getFormattedDailyPrice() {
         return dailyPrice.toString() + " SEK";
     }
