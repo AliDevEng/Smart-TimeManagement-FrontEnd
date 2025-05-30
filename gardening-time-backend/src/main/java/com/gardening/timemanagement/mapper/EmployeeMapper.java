@@ -1,6 +1,7 @@
 package com.gardening.timemanagement.mapper;
 
 import com.gardening.timemanagement.dto.request.CreateEmployeeDto;
+import com.gardening.timemanagement.dto.request.UpdateEmployeeDto;
 import com.gardening.timemanagement.dto.response.EmployeeResponseDto;
 import com.gardening.timemanagement.entity.Employee;
 import org.springframework.stereotype.Component;
@@ -45,5 +46,23 @@ public class EmployeeMapper {
         dto.setUpdatedAt(employee.getUpdatedAt());
 
         return dto;
+    }
+
+    // Uppdaterar en befintlig Employee-entitet med data från UpdateEmployeeDto
+    public void updateEntityFromDto(UpdateEmployeeDto dto, Employee employee) {
+        if (dto == null || employee == null) {
+            return;
+        }
+
+        // Uppdatera endast fält som får ändras
+        if (dto.getName() != null) {
+            employee.setName(dto.getName());
+        }
+        if (dto.getPhone() != null) {
+            employee.setPhone(dto.getPhone());
+        }
+
+        // Notera: Vi uppdaterar INTE isActive här - det hanteras av separata metoder
+        // ID, createdAt, updatedAt hanteras automatiskt av databasen
     }
 }
