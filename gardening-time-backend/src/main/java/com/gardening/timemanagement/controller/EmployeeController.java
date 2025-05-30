@@ -57,6 +57,25 @@ public class EmployeeController {
         return new ResponseEntity<>(responseDto, HttpStatus.CREATED);
     }
 
+    /**
+     * Hämtar en specifik medarbetare baserat på ID.
+     *
+     * GET /api/employees/{id}
+     *
+     * @param id Medarbetarens ID
+     * @return Medarbetarinformation eller HTTP 404 om inte hittad
+     */
 
+    @GetMapping("/{id}")
+    public ResponseEntity<EmployeeResponseDto> getEmployeeById(@PathVariable Long id) {
+        // 1. Anropa Service för att hämta Employee
+        Employee employee = employeeService.getEmployeeById(id);
+
+        // 2. Konvertera Entity till Response DTO
+        EmployeeResponseDto responseDto = employeeMapper.toResponseDto(employee);
+
+        // 3. Returnera med HTTP 200 OK
+        return ResponseEntity.ok(responseDto);
+    }
 
 }
