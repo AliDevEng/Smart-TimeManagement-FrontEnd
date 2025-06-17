@@ -1,5 +1,6 @@
 package com.gardening.timemanagement.service;
 
+import com.gardening.timemanagement.dto.request.UpdateEmployeeDto;
 import com.gardening.timemanagement.dto.response.EmployeeMonthlyReportDto;
 import com.gardening.timemanagement.entity.Employee;
 import com.gardening.timemanagement.entity.EmployeeTime;
@@ -10,6 +11,7 @@ import com.gardening.timemanagement.exception.EmployeeNotFoundException;
 import com.gardening.timemanagement.exception.EmployeeDeletionException;
 import com.gardening.timemanagement.exception.DuplicateEmployeeException;
 import com.gardening.timemanagement.exception.InvalidWorkTimeException;
+import com.gardening.timemanagement.dto.request.UpdateEmployeeDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
@@ -119,31 +121,31 @@ public class EmployeeService {
      * Uppdaterar medarbetarinformation med validering.
      */
     @Transactional
-    public Employee updateEmployee(Long id, Employee updatedEmployee) {
+    public Employee updateEmployee(Long id, UpdateEmployeeDto updateDto) {
         Employee existingEmployee = getEmployeeById(id);
 
-        // Kontrollera namn-konflikter
-        if (!existingEmployee.getName().equals(updatedEmployee.getName())) {
-            if (employeeRepository.existsByName(updatedEmployee.getName())) {
+        // Kontrollera namn-konflikter (om namnet ändras)
+        if (!existingEmployee.getName().equals(updateDto.getName())) {
+            if (employeeRepository.existsByName(updateDto.getName())) {
                 throw new DuplicateEmployeeException(
-                        "En annan medarbetare med namnet '" + updatedEmployee.getName() + "' finns redan"
+                        "En annan medarbetare med namnet '" + updateDto.getName() + "' finns redan"
                 );
             }
         }
 
         // Kontrollera telefon-konflikter
-        if (updatedEmployee.getPhone() != null &&
-                !updatedEmployee.getPhone().equals(existingEmployee.getPhone())) {
-            if (employeeRepository.existsByPhone(updatedEmployee.getPhone())) {
+        if (updateDto.getPhone() != null &&
+                !updateDto.getPhone().equals(existingEmployee.getPhone())) {
+            if (employeeRepository.existsByPhone(updateDto.getPhone())) {
                 throw new DuplicateEmployeeException(
-                        "En annan medarbetare med telefonnummer '" + updatedEmployee.getPhone() + "' finns redan"
+                        "En annan medarbetare med telefonnummer '" + updateDto.getPhone() + "' finns redan"
                 );
             }
         }
 
-        // Uppdatera tillåtna fält (notera att isActive hanteras separat)
-        existingEmployee.setName(updatedEmployee.getName());
-        existingEmployee.setPhone(updatedEmployee.getPhone());
+        // Uppdatera fält
+        existingEmployee.setName(updateDto.getName());
+        existingEmployee.setPhone(updateDto.getPhone());
 
         Employee savedEmployee = employeeRepository.save(existingEmployee);
 

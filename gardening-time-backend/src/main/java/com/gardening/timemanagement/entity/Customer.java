@@ -1,13 +1,12 @@
 package com.gardening.timemanagement.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
+import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 public class Customer {
 
@@ -47,6 +46,9 @@ public class Customer {
     // Tidpunkt när kunden senast uppdaterades. Uppdateras automatiskt av databasen.
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    @OneToMany(mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private List<Task> tasks = new ArrayList<>();
 
     // Default konstruktor krävs av JPA
     public Customer() {}
@@ -110,6 +112,44 @@ public class Customer {
         this.updatedAt = updatedAt;
     }
 
+    public List<Task> getTasks() {
+        return tasks;
+    }
+
+    public void setTasks(List<Task> tasks) {
+        this.tasks = tasks;
+    }
+
+    public void addTask(Task task) {
+        tasks.add(task);
+        task.setCustomer(this);
+    }
+
+    public void removeTask(Task task) {
+        tasks.remove(task);
+        task.setCustomer(null);
+    }
+
+    public long getActiveTaskCount() {
+        return tasks.stream()
+                .filter(task -> task.getStatus() == Task.TaskStatus.ACTIVE)
+                .count();
+    }
+
+
+    public List<Task> getActiveTasks() {
+        return tasks.stream()
+                .filter(task -> task.getStatus() == Task.TaskStatus.ACTIVE)
+                .toList();
+    }
+
+
+    public boolean hasActiveTasks() {
+        return getActiveTaskCount() > 0;
+    }
+
+
+
     // toString metod för att få en läsbar representation av kunden
     @Override
     public String toString() {
@@ -120,6 +160,7 @@ public class Customer {
                 ", address='" + address + '\'' +
                 ", createdAt=" + createdAt +
                 ", updatedAt=" + updatedAt +
+                ", taskCount=" + (tasks != null ? tasks.size() : 0) +
                 '}';
     }
 

@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table (name= "work_days")
@@ -136,7 +137,7 @@ public class WorkDay {
     }
 
     // Lägga till utrustning till arbetsdag
-    public void addEquipment (Equipment equipment) {
+    public void addEquipment (Equipment equipment, int quantity) {
         WorkDayEquipment workDayEquipment = new WorkDayEquipment (this, equipment, quantity);
         this.equipmentUsed.add(workDayEquipment);
     }
@@ -167,7 +168,7 @@ public class WorkDay {
     // Exkluderar lunchtid men inkluderar körtid
     public double getTotalWorkHours() {
         return employeeTimes.stream()
-                .mapToDouble(EmployeeTime::getTotalHours)
+                .mapToDouble(et -> et.getTotalHours().doubleValue()) // Lägg till .doubleValue()
                 .sum();
     }
 
@@ -203,7 +204,7 @@ public class WorkDay {
     @Override
     public String toString() {
         return "WorkDay{" +
-                "id=" + id +
+                "id=" + Id +
                 ", date=" + date +
                 ", task=" + (task != null ? task.getNumber() : "null") +
                 ", supervisor=" + (supervisor != null ? supervisor.getName() : "none") +

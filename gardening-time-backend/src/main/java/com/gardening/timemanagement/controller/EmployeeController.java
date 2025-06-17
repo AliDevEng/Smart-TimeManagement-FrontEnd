@@ -1,14 +1,20 @@
 package com.gardening.timemanagement.controller;
 
 import com.gardening.timemanagement.dto.request.CreateEmployeeDto;
+import com.gardening.timemanagement.dto.request.EmployeeStatusChangeDto;
+import com.gardening.timemanagement.dto.request.UpdateEmployeeDto;
 import com.gardening.timemanagement.dto.response.EmployeeResponseDto;
 import com.gardening.timemanagement.entity.Employee;
 import com.gardening.timemanagement.mapper.EmployeeMapper;
 import com.gardening.timemanagement.service.EmployeeService;
+
+
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 /**
  * REST Controller för medarbetarhantering.
@@ -75,6 +81,92 @@ public class EmployeeController {
         EmployeeResponseDto responseDto = employeeMapper.toResponseDto(employee);
 
         // 3. Returnera med HTTP 200 OK
+        return ResponseEntity.ok(responseDto);
+    }
+
+    /**
+     * Uppdaterar en befintlig medarbetare.
+     *
+     * PUT /api/employees/{id}
+     *
+     * @param id Medarbetarens ID
+     * @param updateDto Uppdaterad medarbetarinformation
+     * @return Den uppdaterade medarbetaren
+     */
+    @PutMapping("/{id}")
+    public ResponseEntity<EmployeeResponseDto> updateEmployee(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateEmployeeDto updateDto) {
+
+        // 1. Service hanterar all affärslogik och mappning
+        Employee updatedEmployee = employeeService.updateEmployee(id, updateDto);
+
+        // 2. Konvertera till Response DTO
+        EmployeeResponseDto responseDto = employeeMapper.toResponseDto(updatedEmployee);
+
+        // 3. Returnera med HTTP 200 OK
+        return ResponseEntity.ok(responseDto);
+    }
+
+    // Hämta alla medarbetare
+    // GET /api/employees
+    @GetMapping
+    public ResponseEntity<List<EmployeeResponseDto>> getAllEmployees() {
+        // 1. Hämta all medarbetare från Service
+        List<Employee> employees = employeeService.getAllEmployees();
+
+        // 2. Konvertera alla till Response DTOs
+        List<EmployeeResponseDto> responseDtos = employees.stream()
+                .map(employeeMapper::toResponseDto)
+                .toList();
+
+        // 3. Returnera med HTTP 200 OK
+        return ResponseEntity.ok(responseDtos);
+    }
+
+
+    // Inaktivera en medarbetare
+    // PATCH /api/employees/{id}/deactivate
+    // PATCH = partiell uppdatering
+    // @RequestBody(required = false) = orsaken är valfri
+
+    @PatchMapping ("/{id}/deactivate")
+    public ResponseEntity<EmployeeResponseDto> deactivateEmployee (
+            @PathVariable Long id,
+            @RequestBody(required = false)EmployeeStatusChangeDto statusChangeDto) {
+
+        // 1. Hämta orsak från DTO (kan vara null)
+        String reason = statusChangeDto != null ? statusChangeDto.getReason() : null;
+
+        // 2 Anropa Service för inaktivering
+        Employee deactivatedEmployee = employeeService.deactivateEmployee(id, reason);
+
+        // 3. Konvertera till Response DTO
+        EmployeeResponseDto responseDto = employeeMapper.toResponseDto(deactivatedEmployee);
+
+        // 4. Returnera med HTTP 200 OK
+        return ResponseEntity.ok(responseDto);
+    }
+
+
+    // Återaktivera en medarbetare
+    // PATCH /api/employees/{id}/reactivate
+
+    @PatchMapping ("/{id}/reactivate")
+    public ResponseEntity<EmployeeResponseDto> reactivateEmployee (
+            @PathVariable Long id,
+            @RequestBody(required = false)EmployeeStatusChangeDto statusChangeDto) {
+
+        // 1. Hämta orsak från DTO (kan vara null)
+        String reason = statusChangeDto != null ? statusChangeDto.getReason() : null;
+
+        // 2 Anropa Service för inaktivering
+        Employee reactivatedEmployee = employeeService.reactivateEmployee(id, reason);
+
+        // 3. Konvertera till Response DTO
+        EmployeeResponseDto responseDto = employeeMapper.toResponseDto(reactivatedEmployee);
+
+        // 4. Returnera med HTTP 200 OK
         return ResponseEntity.ok(responseDto);
     }
 
