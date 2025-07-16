@@ -145,5 +145,17 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
             "OR LOWER(c.name) LIKE LOWER(CONCAT('%', :searchTerm, '%')) " +
             "ORDER BY t.createdAt DESC")
     List<Task> searchTasks(@Param("searchTerm") String searchTerm);
+
+
+    /**
+     * Räknar antal aktiva uppdrag för en specifik kund.
+     * Används för att kontrollera affärsregler om max antal uppdrag per kund.
+     *
+     * @param customerId Kundens ID
+     * @return Antal aktiva uppdrag (status = ACTIVE)
+     */
+    @Query("SELECT COUNT(t) FROM Task t " +
+            "WHERE t.customer.id = :customerId AND t.status = 'ACTIVE'")
+    long countActiveTasksForCustomer(@Param("customerId") Long customerId);
     
 }
