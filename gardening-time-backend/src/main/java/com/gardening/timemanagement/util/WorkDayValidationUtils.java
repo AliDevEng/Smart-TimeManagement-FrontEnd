@@ -9,6 +9,8 @@ import java.util.Set;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import com.gardening.timemanagement.util.ValidationResult;
+
 
 
 public final class WorkDayValidationUtils {
@@ -16,6 +18,9 @@ public final class WorkDayValidationUtils {
     // =================================================================
     // AFFÄRSREGELKONSTANTER - KONFIGURERBARA PARAMETRAR
     // =================================================================
+
+    private static final int MAX_REPORT_RANGE_DAYS = 366; // Max 1 år + skottdag
+    private static final int HISTORICAL_DATA_LIMIT_YEARS = 5; // 5 års historik
 
     // Temporal constraints för arbetsdagar
     public static final int MAX_HISTORICAL_DAYS = 90;        // Hur långt tillbaka vi tillåter registrering
@@ -553,6 +558,7 @@ public final class WorkDayValidationUtils {
         }
     }
 
+    /**
     // Återanvänd ValidationResult från EmployeeValidationUtils
     // (I verkliga systemet skulle denna vara i en gemensam util-klass)
     public static class ValidationResult {
@@ -580,4 +586,103 @@ public final class WorkDayValidationUtils {
             return Optional.ofNullable(message);
         }
     }
+    */
+    
+    public static ValidationResult validateReportDateRange(LocalDate startDate, LocalDate endDate) {
+        // Grundläggande null-kontroll först
+        if (startDate == null && endDate == null) {
+            return ValidationResult.invalid("Både startdatum och slutdatum måste anges för rapporter");
+        }
+
+        if (startDate == null) {
+            return ValidationResult.invalid("Startdatum måste anges för rapportgenerering");
+        }
+
+        if (endDate == null) {
+            return ValidationResult.invalid("Slutdatum måste anges för rapportgenerering");
+        }
+
+        // Kontrollera att startdatum inte är efter slutdatum
+        if (startDate.isAfter(endDate)) {
+            return ValidationResult.invalid(
+                    "Startdatum (" + startDate + ") kan inte vara efter slutdatum (" + endDate + ")"
+            );
+        }
+
+        // Kontrollera att datumintervallet inte är för stort (prestanda och användbarhet)
+        long daysBetween = ChronoUnit.DAYS.between(startDate, endDate);
+        if (daysBetween > MAX_REPORT_RANGE_DAYS) {
+            return ValidationResult.invalid(
+                    "Rapportintervall kan inte vara längre än " + MAX_REPORT_RANGE_DAYS +
+                            " dagar. Aktuellt intervall: " + daysBetween + " dagar. " +
+                            "Dela upp i mindre rapporter för bättre prestanda."
+            );
+        }
+
+        // Kontrollera att startdatum inte är för långt tillbaka (datahistorik-begränsning)
+        if (startDate.isBefore(LocalDate.now().minusYears(HISTORICAL_DATA_LIMIT_YEARS))) {
+            return ValidationResult.invalid(
+                    "Kan inte generera rapporter för datum äldre än " + HISTORICAL_DATA_LIMIT_YEARS +
+                            " år. Äldsta tillåtna datum: " + LocalDate.now().minusYears(HISTORICAL_DATA_LIMIT_YEARS)
+            );
+        }
+
+        // Varna för framtida datum i rapporter (ofta fel men ibland legitimt)
+        LocalDate today = LocalDate.now();
+        if (endDate.isAfter(today)) {
+            long futureDays = ChronoUnit.DAYS.between(today, endDate);
+            if (futureDays > 7) { // Mer än en vecka i framtiden är suspekt
+                return ValidationResult.invalid(
+                        "Slutdatum (" + endDate + ") är " + futureDays +
+                                " dagar i framtiden. Rapporter bör normalt inte sträcka sig så långt framåt. " +
+                                "Kontrollera datumet eller använd 'future data allowed' flaggan om detta är avsiktligt."
+                );
+            } else {
+                // Kort framtida period - varna men tillåt
+                return ValidationResult.validWithWarning(
+                        "Slutdatum inkluderar " + futureDays + " framtida dagar. " +
+                                "Rapporten kan innehålla ofullständig data för dessa datum."
+                );
+            }
+        }
+
+        // Kontrollera helgmönster för användbarhetsvarningar
+        if (isEntireWeekend(startDate, endDate)) {
+            return ValidationResult.validWithWarning(
+                    "Rapportintervallet omfattar endast helgdagar (" + startDate + " till " + endDate + "). " +
+                            "Inga arbetsdagar kan förväntas i detta intervall."
+            );
+        }
+
+        // Kontrollera om intervallet korsar månadsränsor (relevant för många rapporter)
+        boolean crossesMonthBoundary = startDate.getMonth() != endDate.getMonth() ||
+                startDate.getYear() != endDate.getYear();
+
+        if (crossesMonthBoundary && daysBetween > 45) {
+            return ValidationResult.validWithWarning(
+                    "Rapportintervallet korsar flera månader (" + daysBetween + " dagar). " +
+                            "Överväg att dela upp i månadsrapporter för bättre analys."
+            );
+        }
+
+        // Alla validieringar passerade
+        return ValidationResult.valid("Datumintervall är giltigt för rapportgenerering");
+    }
+
+    /**
+     * Hjälpmetod för att kontrollera om ett datumintervall endast omfattar helgdagar.
+     */
+    private static boolean isEntireWeekend(LocalDate startDate, LocalDate endDate) {
+        // Kontrollera om alla dagar i intervallet är lördag eller söndag
+        LocalDate current = startDate;
+        while (!current.isAfter(endDate)) {
+            DayOfWeek dayOfWeek = current.getDayOfWeek();
+            if (dayOfWeek != DayOfWeek.SATURDAY && dayOfWeek != DayOfWeek.SUNDAY) {
+                return false; // Hittade en vardag
+            }
+            current = current.plusDays(1);
+        }
+        return true; // Endast helgdagar
+    }
+
 }

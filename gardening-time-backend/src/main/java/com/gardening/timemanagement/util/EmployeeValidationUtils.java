@@ -448,6 +448,7 @@ public final class EmployeeValidationUtils {
      * Kan vara antingen giltig eller ogiltig, och kan bära med sig
      * ett normaliserat värde eller felmeddelande.
      */
+    /**
     public static class ValidationResult {
         private final boolean valid;
         private final String message;
@@ -493,4 +494,5 @@ public final class EmployeeValidationUtils {
             }
         }
     }
+     */
 }
