@@ -3,9 +3,7 @@ package com.gardening.timemanagement.controller;
 import com.gardening.timemanagement.dto.request.CreateWorkDayDto;
 import com.gardening.timemanagement.dto.request.UpdateWorkDayDto;
 import com.gardening.timemanagement.dto.response.WorkDayResponseDto;
-import com.gardening.timemanagement.exception.*;
 import com.gardening.timemanagement.service.WorkDayService;
-import com.gardening.timemanagement.util.WorkDayValidationUtils;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -13,41 +11,38 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * REST Controller för WorkDay API - Enterprise-kvalitet orchestration.
+ * REST Controller för WorkDay API - Tydlig och funktionell design
  *
- * Denna controller representerar kulmen av vår "Inside-Out" arkitektur,
- * där alla foundation-komponenter vi byggt arbetar tillsammans för att
- * leverera robust, säker och användarvänlig API-funktionalitet.
+ * Denna controller representerar slutstenen i vår arkitektoniska resa
+ * och binder samman alla komponenter vi byggt för att leverera
+ * komplett REST API-funktionalitet för vårt trädgårdssystem.
  *
- * Designprinciper:
- * - Standard CRUD operations för grundläggande livscykel-hantering
- * - Business operations för domain-specific workflows
- * - Rik exception handling med actionable error responses
- * - Performance-medveten med smart caching och batch operations
- * - Security-first med comprehensive input validation
- * - Frontend-vänlig med embedded data och metadata
+ * Designprinciper för studentlärande:
+ * - Tydliga REST endpoints med standardiserade HTTP-metoder
+ * - Konsistent error handling med begripliga felmeddelanden
+ * - Robust input validation med användarvänlig feedback
+ * - Enkel men effektiv request/response hantering
  *
- * @author Enterprise Development Team
- * @version 1.0
- * @since WorkDay API v1.0
+ * Som student är detta ett utmärkt exempel på hur man strukturerar
+ * REST controllers som balanserar funktionalitet med läsbarhet.
  */
 @RestController
 @RequestMapping("/api/workdays")
-@CrossOrigin(origins = "*") // TODO: Konfigurera för production med specifika domains
+@CrossOrigin(origins = "*") // För utveckling - konfigurera säkert för produktion
 public class WorkDayController {
 
     private final WorkDayService workDayService;
 
     /**
-     * Constructor injection för optimal dependency management.
-     * Spring IoC container hanterar lifecycle och dependency resolution.
+     * Constructor injection för clean dependency management
+     * Spring hanterar automatiskt injektion av WorkDayService
      */
     @Autowired
     public WorkDayController(WorkDayService workDayService) {
@@ -55,60 +50,46 @@ public class WorkDayController {
     }
 
     // =================================================================
-    // STANDARD CRUD OPERATIONS - Core Lifecycle Management
+    // GRUNDLÄGGANDE CRUD OPERATIONER - Core API Functionality
     // =================================================================
 
     /**
-     * Skapar en ny arbetsdag med komplett business rule validation.
+     * Skapar en ny arbetsdag med full business logic validation
      *
-     * Denna endpoint hanterar den mest komplexa create-operationen i systemet
-     * eftersom WorkDay måste koordinera med Task, Employee och Equipment
-     * samtidigt som den säkerställer alla business invariants.
-     *
-     * Frontend Usage:
      * POST /api/workdays
      * Content-Type: application/json
      *
-     * @param createDto Validated DTO med all information för att skapa arbetsdagen
+     * Denna endpoint hanterar skapandet av nya arbetsdagar inklusive
+     * all nödvändig validering och koordination med relaterade entities.
+     *
+     * @param createDto Validerad DTO med all information för arbetsdagen
      * @return 201 Created med WorkDayResponseDto eller error response
      */
     @PostMapping
     public ResponseEntity<?> createWorkDay(@Valid @RequestBody CreateWorkDayDto createDto) {
         try {
-            // Service layer hanterar all complex business logic och validation
+            // Service layer hanterar all komplex business logic
             WorkDayResponseDto createdWorkDay = workDayService.createWorkDay(createDto);
 
-            // 201 Created med Location header för REST compliance
+            // Returnera 201 Created med den skapade arbetsdagen
             return ResponseEntity.status(HttpStatus.CREATED).body(createdWorkDay);
 
-        } catch (InvalidWorkDayException e) {
-            // Business rule violations - returnera detailed explanation
-            return buildErrorResponse(HttpStatus.BAD_REQUEST, e.getTitle(), e.getMessage(),
-                    Map.of("category", "validation", "field", e.getField()));
-
-        } catch (DuplicateWorkDayException e) {
-            // Unique constraint violations - helpful för frontend UX
-            return buildErrorResponse(HttpStatus.CONFLICT, "Duplicate WorkDay", e.getMessage(),
-                    Map.of("category", "duplicate", "suggestion", "Use update instead of create"));
-
-        } catch (TaskNotFoundException | EmployeeNotFoundException e) {
-            // Cross-entity reference problems - guide user to resolution
-            return buildErrorResponse(HttpStatus.BAD_REQUEST, "Reference Not Found", e.getMessage(),
-                    Map.of("category", "reference", "action", "Verify referenced entities exist"));
+        } catch (RuntimeException e) {
+            // Hantera alla runtime exceptions med användarvänliga meddelanden
+            return buildErrorResponse(HttpStatus.BAD_REQUEST,
+                    "Kunde inte skapa arbetsdag", e.getMessage());
 
         } catch (Exception e) {
-            // Unexpected errors - log för debugging men ge user-friendly response
-            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Server Error",
-                    "An unexpected error occurred while creating the work day",
-                    Map.of("category", "system", "action", "Contact support if issue persists"));
+            // Hantera oväntade fel med generisk felhantering
+            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Systemfel", "Ett oväntat fel uppstod vid skapande av arbetsdag");
         }
     }
 
     /**
-     * Hämtar en specifik arbetsdag med full information.
+     * Hämtar en specifik arbetsdag med all relaterad information
      *
-     * Returnerar embedded employee, task och equipment data för optimal
-     * frontend performance och reduced API calls.
+     * GET /api/workdays/{id}
      *
      * @param id WorkDay ID att hämta
      * @return 200 OK med WorkDayResponseDto eller 404 Not Found
@@ -119,25 +100,28 @@ public class WorkDayController {
             WorkDayResponseDto workDay = workDayService.getWorkDayById(id);
             return ResponseEntity.ok(workDay);
 
-        } catch (WorkDayNotFoundException e) {
-            return buildErrorResponse(HttpStatus.NOT_FOUND, "WorkDay Not Found", e.getMessage(),
-                    Map.of("category", "not_found", "id", id.toString()));
+        } catch (RuntimeException e) {
+            // Om service kastar RuntimeException, tolka som "not found"
+            return buildErrorResponse(HttpStatus.NOT_FOUND,
+                    "Arbetsdag inte hittad", "Arbetsdag med ID " + id + " finns inte");
 
         } catch (Exception e) {
-            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Server Error",
-                    "An error occurred while retrieving the work day",
-                    Map.of("category", "system", "id", id.toString()));
+            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Systemfel", "Ett fel uppstod vid hämtning av arbetsdag");
         }
     }
 
     /**
-     * Uppdaterar en befintlig arbetsdag med delta-semantik.
+     * Uppdaterar en befintlig arbetsdag med delta-semantik
      *
-     * Endast icke-null fält i UpdateWorkDayDto kommer att uppdateras,
-     * vilket ger flexibel partial update functionality.
+     * PUT /api/workdays/{id}
+     * Content-Type: application/json
+     *
+     * Endast fält som inte är null i UpdateWorkDayDto kommer att uppdateras.
+     * Detta ger flexibel partial update funktionalitet.
      *
      * @param id WorkDay ID att uppdatera
-     * @param updateDto DTO med fält som ska uppdateras
+     * @param updateDto DTO med fält att uppdatera
      * @return 200 OK med uppdaterad WorkDayResponseDto
      */
     @PutMapping("/{id}")
@@ -147,30 +131,27 @@ public class WorkDayController {
             WorkDayResponseDto updatedWorkDay = workDayService.updateWorkDay(id, updateDto);
             return ResponseEntity.ok(updatedWorkDay);
 
-        } catch (WorkDayNotFoundException e) {
-            return buildErrorResponse(HttpStatus.NOT_FOUND, "WorkDay Not Found", e.getMessage(),
-                    Map.of("category", "not_found", "id", id.toString()));
-
-        } catch (InvalidWorkDayException e) {
-            return buildErrorResponse(HttpStatus.BAD_REQUEST, e.getTitle(), e.getMessage(),
-                    Map.of("category", "validation", "field", e.getField(), "id", id.toString()));
-
-        } catch (DuplicateWorkDayException e) {
-            return buildErrorResponse(HttpStatus.CONFLICT, "Update Conflict", e.getMessage(),
-                    Map.of("category", "duplicate", "id", id.toString()));
+        } catch (RuntimeException e) {
+            // Olika typer av runtime exceptions kan indikera olika problem
+            String message = e.getMessage();
+            if (message.contains("finns inte") || message.contains("not found")) {
+                return buildErrorResponse(HttpStatus.NOT_FOUND,
+                        "Arbetsdag inte hittad", message);
+            } else {
+                return buildErrorResponse(HttpStatus.BAD_REQUEST,
+                        "Kunde inte uppdatera arbetsdag", message);
+            }
 
         } catch (Exception e) {
-            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Server Error",
-                    "An error occurred while updating the work day",
-                    Map.of("category", "system", "id", id.toString()));
+            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Systemfel", "Ett fel uppstod vid uppdatering av arbetsdag");
         }
     }
 
     /**
-     * Tar bort en arbetsdag med cascade-awareness.
+     * Tar bort en arbetsdag med business rule kontroll
      *
-     * Kontrollerar business rules för deletion och ger detailed feedback
-     * om varför deletion kanske inte är möjlig.
+     * DELETE /api/workdays/{id}
      *
      * @param id WorkDay ID att ta bort
      * @return 204 No Content vid framgång eller error response
@@ -179,41 +160,44 @@ public class WorkDayController {
     public ResponseEntity<?> deleteWorkDay(@PathVariable Long id) {
         try {
             workDayService.deleteWorkDay(id);
+            // 204 No Content indikerar framgångsrik deletion utan response body
             return ResponseEntity.noContent().build();
 
-        } catch (WorkDayNotFoundException e) {
-            return buildErrorResponse(HttpStatus.NOT_FOUND, "WorkDay Not Found", e.getMessage(),
-                    Map.of("category", "not_found", "id", id.toString()));
-
-        } catch (WorkDayDeletionException e) {
-            return buildErrorResponse(HttpStatus.CONFLICT, "Deletion Not Allowed", e.getMessage(),
-                    Map.of("category", "deletion_blocked", "id", id.toString(),
-                            "action", "Resolve blocking constraints first"));
+        } catch (RuntimeException e) {
+            String message = e.getMessage();
+            if (message.contains("finns inte") || message.contains("not found")) {
+                return buildErrorResponse(HttpStatus.NOT_FOUND,
+                        "Arbetsdag inte hittad", message);
+            } else {
+                return buildErrorResponse(HttpStatus.CONFLICT,
+                        "Kan inte ta bort arbetsdag", message);
+            }
 
         } catch (Exception e) {
-            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Server Error",
-                    "An error occurred while deleting the work day",
-                    Map.of("category", "system", "id", id.toString()));
+            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Systemfel", "Ett fel uppstod vid borttagning av arbetsdag");
         }
     }
 
     // =================================================================
-    // QUERY OPERATIONS - Advanced Data Retrieval
+    // QUERY OPERATIONER - Avancerad datahämtning
     // =================================================================
 
     /**
-     * Hämtar alla arbetsdagar med optional filtering och pagination.
+     * Hämtar alla arbetsdagar med optional filtering
      *
-     * Supports multiple query parameters för flexible data retrieval:
-     * - Date range filtering för reports
-     * - Task-specific filtering för project tracking
-     * - Employee-specific filtering för personal reports
+     * GET /api/workdays
      *
-     * @param startDate Optional start date för filtering
-     * @param endDate Optional end date för filtering
-     * @param taskId Optional task ID för filtering
-     * @param employeeId Optional employee ID för filtering
-     * @param includeMetrics Om performance metrics ska inkluderas
+     * Query parameters:
+     * - startDate: Filtrera från datum (YYYY-MM-DD)
+     * - endDate: Filtrera till datum (YYYY-MM-DD)
+     * - taskId: Filtrera på specifikt uppdrag
+     * - employeeId: Filtrera på specifik medarbetare
+     *
+     * @param startDate Optional startdatum för filtrering
+     * @param endDate Optional slutdatum för filtrering
+     * @param taskId Optional task ID för filtrering
+     * @param employeeId Optional employee ID för filtrering
      * @return Lista med WorkDayResponseDto objekt
      */
     @GetMapping
@@ -225,214 +209,272 @@ public class WorkDayController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
 
             @RequestParam(required = false) Long taskId,
-            @RequestParam(required = false) Long employeeId,
-            @RequestParam(defaultValue = "false") boolean includeMetrics) {
+            @RequestParam(required = false) Long employeeId) {
 
         try {
             List<WorkDayResponseDto> workDays;
 
-            // Smart routing baserat på query parameters
+            // Smart routing baserat på vilka query parameters som finns
             if (startDate != null && endDate != null) {
-                workDays = workDayService.getWorkDaysInDateRange(startDate, endDate, includeMetrics);
+                workDays = workDayService.getWorkDaysInDateRange(startDate, endDate);
             } else if (taskId != null) {
-                workDays = workDayService.getWorkDaysByTask(taskId, includeMetrics);
+                workDays = workDayService.getWorkDaysByTask(taskId);
             } else if (employeeId != null) {
-                workDays = workDayService.getWorkDaysByEmployee(employeeId, includeMetrics);
+                workDays = workDayService.getWorkDaysByEmployee(employeeId);
             } else {
-                // Default: recent work days för dashboard view
-                workDays = workDayService.getRecentWorkDays(30, includeMetrics);
+                // Default: hämta senaste 30 dagarnas arbetsdagar
+                workDays = workDayService.getRecentWorkDays(30);
             }
 
-            // Lägg till metadata för frontend optimization
+            // Skapa response med metadata för frontend användning
             Map<String, Object> response = new HashMap<>();
             response.put("workDays", workDays);
             response.put("count", workDays.size());
-            response.put("includeMetrics", includeMetrics);
 
+            // Lägg till query information för frontend context
             if (startDate != null && endDate != null) {
                 response.put("dateRange", Map.of("start", startDate, "end", endDate));
+            }
+            if (taskId != null) {
+                response.put("taskId", taskId);
+            }
+            if (employeeId != null) {
+                response.put("employeeId", employeeId);
             }
 
             return ResponseEntity.ok(response);
 
         } catch (IllegalArgumentException e) {
-            // Invalid query parameters - guide user to correct usage
-            return buildErrorResponse(HttpStatus.BAD_REQUEST, "Invalid Query Parameters", e.getMessage(),
-                    Map.of("category", "query_parameters",
-                            "suggestion", "Check date formats and parameter values"));
+            // Hantera ogiltiga query parameters
+            return buildErrorResponse(HttpStatus.BAD_REQUEST,
+                    "Ogiltiga sökparametrar", e.getMessage());
 
         } catch (Exception e) {
-            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Server Error",
-                    "An error occurred while retrieving work days",
-                    Map.of("category", "system"));
-        }
-    }
-
-    // =================================================================
-    // BUSINESS OPERATIONS - Domain-Specific Workflows
-    // =================================================================
-
-    /**
-     * Bulk operation för att lägga till medarbetare till en befintlig arbetsdag.
-     *
-     * Detta är en business operation som går utöver standard CRUD eftersom
-     * den hanterar complex employee assignment validation och conflict resolution.
-     *
-     * @param workDayId WorkDay att lägga till medarbetare till
-     * @param employeeIds Lista med Employee IDs att lägga till
-     * @return Uppdaterad WorkDayResponseDto
-     */
-    @PostMapping("/{workDayId}/employees")
-    public ResponseEntity<?> addEmployeesToWorkDay(@PathVariable Long workDayId,
-                                                   @RequestBody List<Long> employeeIds) {
-        try {
-            WorkDayResponseDto updatedWorkDay = workDayService.addEmployeesToWorkDay(workDayId, employeeIds);
-            return ResponseEntity.ok(updatedWorkDay);
-
-        } catch (WorkDayNotFoundException e) {
-            return buildErrorResponse(HttpStatus.NOT_FOUND, "WorkDay Not Found", e.getMessage(),
-                    Map.of("category", "not_found", "workDayId", workDayId.toString()));
-
-        } catch (EmployeeNotFoundException e) {
-            return buildErrorResponse(HttpStatus.BAD_REQUEST, "Employee Not Found", e.getMessage(),
-                    Map.of("category", "reference", "workDayId", workDayId.toString()));
-
-        } catch (InvalidWorkDayException e) {
-            return buildErrorResponse(HttpStatus.BAD_REQUEST, e.getTitle(), e.getMessage(),
-                    Map.of("category", "business_rule", "workDayId", workDayId.toString()));
-
-        } catch (Exception e) {
-            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Server Error",
-                    "An error occurred while adding employees to work day",
-                    Map.of("category", "system", "workDayId", workDayId.toString()));
+            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Systemfel", "Ett fel uppstod vid hämtning av arbetsdagar");
         }
     }
 
     /**
-     * Business operation för equipment conflict detection och resolution.
+     * Hämtar arbetsdagar för ett specifikt datum
      *
-     * Analyserar equipment usage conflicts för en given period och
-     * föreslår resolution strategies för project managers.
+     * GET /api/workdays/by-date/{date}
      *
-     * @param startDate Start av period att analysera
-     * @param endDate Slut av period att analysera
-     * @return Conflict analysis rapport med resolution suggestions
+     * @param date Datum att filtrera på (YYYY-MM-DD format)
+     * @return Lista med arbetsdagar för det angivna datumet
      */
-    @GetMapping("/equipment-conflicts")
-    public ResponseEntity<?> analyzeEquipmentConflicts(
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+    @GetMapping("/by-date/{date}")
+    public ResponseEntity<?> getWorkDaysByDate(
+            @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
 
         try {
-            // Validate date range using our sophisticated validation utils
-            WorkDayValidationUtils.ValidationResult dateValidation =
-                    WorkDayValidationUtils.validateReportDateRange(startDate, endDate);
+            List<WorkDayResponseDto> workDays = workDayService.getWorkDaysByDate(date);
 
-            if (!dateValidation.isValid()) {
-                return buildErrorResponse(HttpStatus.BAD_REQUEST, "Invalid Date Range",
-                        dateValidation.getMessage().orElse("Invalid date parameters"),
-                        Map.of("category", "date_validation"));
+            Map<String, Object> response = new HashMap<>();
+            response.put("date", date);
+            response.put("workDays", workDays);
+            response.put("count", workDays.size());
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Systemfel", "Ett fel uppstod vid hämtning av arbetsdagar för datum " + date);
+        }
+    }
+
+    // =================================================================
+    // REPORTING ENDPOINTS - Frontend Integration Support
+    // =================================================================
+
+    /**
+     * Hämtar arbetstimmar för en specifik medarbetare
+     *
+     * GET /api/workdays/employee/{employeeId}/hours
+     * GET /api/workdays/employee/{employeeId}/hours?date=2024-01-15
+     *
+     * Denna endpoint stöder frontend medarbetarsökning genom att returnera
+     * detaljerade arbetstidsdata för en specifik medarbetare.
+     *
+     * @param employeeId Medarbetare att hämta arbetstimmar för
+     * @param date Optional specifikt datum för filtrering
+     * @return Lista med arbetstidsdata eller error response
+     */
+    @GetMapping("/employee/{employeeId}/hours")
+    public ResponseEntity<?> getEmployeeWorkHours(
+            @PathVariable Long employeeId,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+
+        try {
+            List<Map<String, Object>> workHours = workDayService.calculateEmployeeWorkHours(employeeId, date);
+
+            // Beräkna sammanfattande statistik för response
+            double totalHours = workHours.stream()
+                    .mapToDouble(wh -> (Double) wh.get("totalHours"))
+                    .sum();
+            double totalDriveTime = workHours.stream()
+                    .mapToDouble(wh -> (Double) wh.get("driveTime"))
+                    .sum();
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("employeeId", employeeId);
+            response.put("filterDate", date != null ? date.toString() : "Alla datum");
+            response.put("workHours", workHours);
+            response.put("summary", Map.of(
+                    "totalHours", totalHours,
+                    "totalDriveTime", totalDriveTime,
+                    "workDayCount", workHours.size()
+            ));
+
+            return ResponseEntity.ok(response);
+
+        } catch (RuntimeException e) {
+            return buildErrorResponse(HttpStatus.BAD_REQUEST,
+                    "Kunde inte hämta arbetstimmar", e.getMessage());
+
+        } catch (Exception e) {
+            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Systemfel", "Ett fel uppstod vid hämtning av arbetstimmar för medarbetare");
+        }
+    }
+
+    /**
+     * Hämtar arbetstimmar för en specifik kunds projekt
+     *
+     * GET /api/workdays/customer/{customerId}/hours
+     * GET /api/workdays/customer/{customerId}/hours?date=2024-01-15
+     *
+     * Denna endpoint stöder frontend kundsökning genom att aggregera
+     * all arbetstid som lagts på en kunds uppdrag.
+     *
+     * @param customerId Kund att hämta arbetstimmar för
+     * @param date Optional specifikt datum för filtrering
+     * @return Aggregerad arbetstidsdata för kundens projekt
+     */
+    @GetMapping("/customer/{customerId}/hours")
+    public ResponseEntity<?> getCustomerWorkHours(
+            @PathVariable Long customerId,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+
+        try {
+            List<Map<String, Object>> customerWork = workDayService.calculateCustomerWorkHours(customerId, date);
+
+            // Beräkna totaler för kunden
+            double totalHours = customerWork.stream()
+                    .mapToDouble(cw -> (Double) cw.get("totalHours"))
+                    .sum();
+            int totalEmployees = customerWork.stream()
+                    .mapToInt(cw -> (Integer) cw.get("employeeCount"))
+                    .sum();
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("customerId", customerId);
+            response.put("filterDate", date != null ? date.toString() : "Alla datum");
+            response.put("customerWork", customerWork);
+            response.put("summary", Map.of(
+                    "totalHours", totalHours,
+                    "totalEmployeeInvolvements", totalEmployees,
+                    "workDayCount", customerWork.size()
+            ));
+
+            return ResponseEntity.ok(response);
+
+        } catch (RuntimeException e) {
+            return buildErrorResponse(HttpStatus.BAD_REQUEST,
+                    "Kunde inte hämta kundarbetstimmar", e.getMessage());
+
+        } catch (Exception e) {
+            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Systemfel", "Ett fel uppstod vid hämtning av arbetstimmar för kund");
+        }
+    }
+
+    /**
+     * Genererar månadsrapport för alla medarbetare
+     *
+     * GET /api/workdays/reports/monthly?month=2024-01
+     *
+     * Denna endpoint stöder frontend månadsrapporter genom att returnera
+     * sammanfattad arbetstidsdata för alla medarbetare under en månad.
+     *
+     * @param month Månad att generera rapport för (YYYY-MM format)
+     * @return Månadsrapport med alla medarbetares arbetstid
+     */
+    @GetMapping("/reports/monthly")
+    public ResponseEntity<?> getMonthlyReport(@RequestParam String month) {
+        try {
+            // Grundläggande validering av månadsformat
+            if (!month.matches("\\d{4}-\\d{2}")) {
+                return buildErrorResponse(HttpStatus.BAD_REQUEST,
+                        "Ogiltigt månadsformat", "Använd format YYYY-MM (exempel: 2024-01)");
             }
 
-            Map<String, Object> conflictAnalysis = workDayService.analyzeEquipmentConflicts(startDate, endDate);
-            return ResponseEntity.ok(conflictAnalysis);
+            Map<String, Object> monthlyReport = workDayService.generateMonthlyReport(month);
+            return ResponseEntity.ok(monthlyReport);
+
+        } catch (RuntimeException e) {
+            return buildErrorResponse(HttpStatus.BAD_REQUEST,
+                    "Kunde inte generera månadsrapport", e.getMessage());
 
         } catch (Exception e) {
-            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Server Error",
-                    "An error occurred while analyzing equipment conflicts",
-                    Map.of("category", "system", "dateRange", startDate + " to " + endDate));
+            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Systemfel", "Ett fel uppstod vid generering av månadsrapport");
         }
     }
 
     /**
-     * Validates om en ny arbetsdag kan skapas utan conflicts.
+     * Genererar statistik för arbetsdagar inom en period
      *
-     * Denna preview-operation låter frontend validera input innan
-     * actual creation attempt, vilket förbättrar user experience.
+     * GET /api/workdays/statistics
      *
-     * @param createDto DTO att validera (samma som för creation)
-     * @return Validation result med detailed feedback
-     */
-    @PostMapping("/validate")
-    public ResponseEntity<?> validateWorkDayCreation(@Valid @RequestBody CreateWorkDayDto createDto) {
-        try {
-            Map<String, Object> validationResult = workDayService.validateWorkDayCreation(createDto);
-            return ResponseEntity.ok(validationResult);
-
-        } catch (Exception e) {
-            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Server Error",
-                    "An error occurred while validating work day creation",
-                    Map.of("category", "system"));
-        }
-    }
-
-    // =================================================================
-    // REPORTING OPERATIONS - Business Intelligence Support
-    // =================================================================
-
-    /**
-     * Genererar comprehensive work day statistics för management reporting.
-     *
-     * Denna endpoint producerar rich analytics som används av
-     * business intelligence tools och management dashboards.
+     * Query parameters:
+     * - startDate: Rapportperiod start (obligatorisk)
+     * - endDate: Rapportperiod slut (obligatorisk)
      *
      * @param startDate Rapportperiod start
      * @param endDate Rapportperiod slut
-     * @param groupBy Gruppering: "task", "employee", "date", eller "equipment"
-     * @return Statistics rapport med multiple dimensions
+     * @return Statistik rapport med multiple dimensioner
      */
     @GetMapping("/statistics")
     public ResponseEntity<?> getWorkDayStatistics(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
-            @RequestParam(defaultValue = "date") String groupBy) {
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
 
         try {
-            // Validate date range med våra sophisticated validation rules
-            WorkDayValidationUtils.ValidationResult dateValidation =
-                    WorkDayValidationUtils.validateReportDateRange(startDate, endDate);
-
-            if (!dateValidation.isValid()) {
-                return buildErrorResponse(HttpStatus.BAD_REQUEST, "Invalid Date Range",
-                        dateValidation.getMessage().orElse("Invalid date parameters"),
-                        Map.of("category", "date_validation"));
+            // Grundläggande validering av datumintervall
+            if (startDate.isAfter(endDate)) {
+                return buildErrorResponse(HttpStatus.BAD_REQUEST,
+                        "Ogiltigt datumintervall", "Startdatum kan inte vara efter slutdatum");
             }
 
-            // Validate groupBy parameter
-            if (!List.of("task", "employee", "date", "equipment").contains(groupBy.toLowerCase())) {
-                return buildErrorResponse(HttpStatus.BAD_REQUEST, "Invalid Group By Parameter",
-                        "groupBy must be one of: task, employee, date, equipment",
-                        Map.of("category", "parameter_validation", "provided", groupBy));
-            }
-
-            Map<String, Object> statistics = workDayService.generateWorkDayStatistics(startDate, endDate, groupBy);
+            Map<String, Object> statistics = workDayService.generateWorkDayStatistics(startDate, endDate);
             return ResponseEntity.ok(statistics);
 
         } catch (Exception e) {
-            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Server Error",
-                    "An error occurred while generating statistics",
-                    Map.of("category", "system", "dateRange", startDate + " to " + endDate));
+            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Systemfel", "Ett fel uppstod vid generering av statistik");
         }
     }
 
     // =================================================================
-    // HELPER METHODS - Error Response Construction
+    // HELPER METHODS - Återanvändbara hjälpmetoder
     // =================================================================
 
     /**
-     * Builds consistent error response struktur för optimal frontend handling.
+     * Bygger konsistent error response struktur
      *
-     * Error responses följer en standardiserad struktur som gör det enkelt
-     * för frontend att visa användarvänliga meddelanden och handling guidance.
+     * Denna metod säkerställer att alla error responses följer samma format,
+     * vilket gör det lättare för frontend att hantera fel på ett enhetligt sätt.
      *
      * @param status HTTP status code
-     * @param title Short, descriptive error title
-     * @param message Detailed error explanation
-     * @param details Additional context för debugging och user guidance
-     * @return ResponseEntity med structured error response
+     * @param title Kort beskrivande titel för felet
+     * @param message Detaljerat felmeddelande
+     * @return ResponseEntity med strukturerat error response
      */
-    private ResponseEntity<Map<String, Object>> buildErrorResponse(HttpStatus status, String title,
-                                                                   String message, Map<String, Object> details) {
+    private ResponseEntity<Map<String, Object>> buildErrorResponse(HttpStatus status,
+                                                                   String title, String message) {
         Map<String, Object> errorResponse = new HashMap<>();
         errorResponse.put("error", true);
         errorResponse.put("status", status.value());
@@ -440,17 +482,20 @@ public class WorkDayController {
         errorResponse.put("message", message);
         errorResponse.put("timestamp", java.time.Instant.now().toString());
 
-        if (details != null && !details.isEmpty()) {
-            errorResponse.put("details", details);
-        }
-
-        // Lägg till helpful suggestions baserat på error type
-        if (status == HttpStatus.BAD_REQUEST) {
-            errorResponse.put("suggestion", "Please review the provided data and try again");
-        } else if (status == HttpStatus.NOT_FOUND) {
-            errorResponse.put("suggestion", "Verify that the requested resource exists");
-        } else if (status == HttpStatus.CONFLICT) {
-            errorResponse.put("suggestion", "Resolve the conflict by updating existing data or changing input");
+        // Lägg till hjälpsamma förslag baserat på feltyp
+        switch (status) {
+            case BAD_REQUEST:
+                errorResponse.put("suggestion", "Kontrollera att all indata är korrekt och försök igen");
+                break;
+            case NOT_FOUND:
+                errorResponse.put("suggestion", "Verifiera att den begärda resursen existerar");
+                break;
+            case CONFLICT:
+                errorResponse.put("suggestion", "Lös konflikten genom att uppdatera befintlig data");
+                break;
+            case INTERNAL_SERVER_ERROR:
+                errorResponse.put("suggestion", "Kontakta support om problemet kvarstår");
+                break;
         }
 
         return ResponseEntity.status(status).body(errorResponse);

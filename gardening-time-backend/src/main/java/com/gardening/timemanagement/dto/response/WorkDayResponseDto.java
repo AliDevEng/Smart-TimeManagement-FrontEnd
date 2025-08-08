@@ -10,7 +10,21 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.ArrayList;
 
-
+/**
+ * Enterprise-nivå response DTO för WorkDay-entiteten med sofistikerad data-arkitektur.
+ *
+ * Denna DTO implementerar advanced response patterns för optimal performance och
+ * användarvänlighet genom intelligent expansion strategies och embedded data structures.
+ *
+ * Arkitektoniska principer:
+ * - Conditional expansion för att balansera completeness mot performance
+ * - Embedded related entity data för att minimera API round-trips
+ * - Pre-calculated business metrics för optimal client-side experience
+ * - Rich metadata för intelligent client-side caching och optimization
+ *
+ * Designphilosophy: "Provide exactly what clients need, when they need it,
+ * without unnecessary complexity or performance overhead."
+ */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class WorkDayResponseDto {
 

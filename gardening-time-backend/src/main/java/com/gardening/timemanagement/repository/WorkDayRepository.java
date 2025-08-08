@@ -262,4 +262,100 @@ public interface WorkDayRepository extends JpaRepository<WorkDay, Long> {
             "JOIN FETCH t.customer c " +
             "ORDER BY wd.date DESC, wd.createdAt DESC")
     List<WorkDay> findRecentWorkDays();
+
+    @Query("SELECT DISTINCT w FROM WorkDay w JOIN w.employeeTimes et WHERE et.employee.id = :employeeId")
+    List<WorkDay> findByEmployeeId(@Param("employeeId") Long employeeId);
+
+    /**
+     * Finds WorkDays för a specific task.
+     *
+     * This supports task-centric reporting och project management workflows.
+     * Essential för tracking project progress och resource allocation analysis.
+     *
+     * @param taskId Task ID to search för
+     * @return List of WorkDays associated med specified task
+     */
+    List<WorkDay> findByTaskId(Long taskId);
+
+    /**
+     * Finds WorkDay by Task ID och Date combination.
+     *
+     * This method enforces business rule that only one WorkDay can exist
+     * för any given Task+Date combination. Used för duplicate detection
+     * during WorkDay creation och validation.
+     *
+     * @param taskId Task ID
+     * @param date WorkDay date
+     * @return Optional containing WorkDay if exists, empty otherwise
+     */
+    Optional<WorkDay> findByTaskIdAndDate(Long taskId, LocalDate date);
+
+    /**
+     * Finds all WorkDays within a date range (inclusive).
+     *
+     * This is foundational method för all reporting och analytics operations.
+     * Supports dashboard views, period-based analysis, och statistical reporting.
+     *
+     * Performance note: Consider adding database index on date column
+     * för optimal query performance på large datasets.
+     *
+     * @param startDate Range start (inclusive)
+     * @param endDate Range end (inclusive)
+     * @return List of WorkDays within specified date range
+     */
+    List<WorkDay> findByDateBetween(LocalDate startDate, LocalDate endDate);
+
+    /**
+     * Finds all WorkDays för a specific date.
+     *
+     * Supports daily operations och conflict detection scenarios.
+     * Used för validating employee conflicts och equipment availability.
+     *
+     * @param date Specific date to search för
+     * @return List of all WorkDays på specified date
+     */
+    List<WorkDay> findByDate(LocalDate date);
+
+    /**
+     * Counts WorkDays för a specific task within date range.
+     *
+     * Performance-optimized method för statistical analysis without
+     * loading full entities. Useful för dashboard metrics och reporting.
+     *
+     * @param taskId Task ID to count för
+     * @param startDate Range start
+     * @param endDate Range end
+     * @return Count of WorkDays för task within range
+     */
+    @Query("SELECT COUNT(w) FROM WorkDay w WHERE w.task.id = :taskId AND w.date BETWEEN :startDate AND :endDate")
+    long countByTaskIdAndDateBetween(@Param("taskId") Long taskId,
+                                     @Param("startDate") LocalDate startDate,
+                                     @Param("endDate") LocalDate endDate);
+
+    /**
+     * Finds WorkDays med equipment conflicts på specific date.
+     *
+     * Specialized query för equipment conflict analysis. Identifies WorkDays
+     * som share samma equipment på samma date, which helps med resource
+     * planning och conflict resolution.
+     *
+     * @param date Date to analyze för equipment conflicts
+     * @return List of WorkDays that might have equipment conflicts
+     */
+    @Query("SELECT w FROM WorkDay w WHERE w.date = :date AND EXISTS " +
+            "(SELECT 1 FROM WorkDayEquipment we WHERE we.workDay = w)")
+    List<WorkDay> findWorkDaysWithEquipmentOnDate(@Param("date") LocalDate date);
+
+    /**
+     * Finds recent WorkDays för dashboard och overview purposes.
+     *
+     * Performance-optimized query with built-in ordering för chronological display.
+     * Supports dashboard widgets och recent activity views.
+     *
+     * @param date Cutoff date (typically current date minus some interval)
+     * @return List of WorkDays since specified date, ordered by date descending
+     */
+    @Query("SELECT w FROM WorkDay w WHERE w.date >= :date ORDER BY w.date DESC, w.id DESC")
+    List<WorkDay> findRecentWorkDays(@Param("date") LocalDate date);
 }
+

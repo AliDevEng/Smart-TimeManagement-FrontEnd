@@ -29,11 +29,7 @@ public class TaskNotFoundException extends RuntimeException {
         this.searchType = "ID";
     }
 
-    public TaskNotFoundException(String taskNumber) {
-        super("Uppdrag med nummer '" + taskNumber + "' finns inte");
-        this.searchCriteria = taskNumber;
-        this.searchType = "nummer";
-    }
+
 
     public TaskNotFoundException(String searchType, String searchCriteria, String customMessage) {
         super(customMessage != null ? customMessage :

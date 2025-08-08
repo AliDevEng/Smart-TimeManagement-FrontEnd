@@ -1,6 +1,5 @@
 package com.gardening.timemanagement.service;
 
-import com.gardening.timemanagement.util.ValidationResult;
 import com.gardening.timemanagement.dto.request.CreateWorkDayDto;
 import com.gardening.timemanagement.dto.request.UpdateWorkDayDto;
 import com.gardening.timemanagement.dto.response.WorkDayResponseDto;
@@ -8,1189 +7,713 @@ import com.gardening.timemanagement.entity.*;
 import com.gardening.timemanagement.exception.*;
 import com.gardening.timemanagement.mapper.WorkDayMapper;
 import com.gardening.timemanagement.repository.*;
-import com.gardening.timemanagement.util.WorkDayValidationUtils;
+
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.annotation.Isolation;
-import org.springframework.transaction.annotation.Propagation;
+
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-import java.util.HashSet;
+import java.util.*;
 import java.util.stream.Collectors;
 
-
+/**
+ * WorkDayService - Huvudservice för WorkDay business logic
+ *
+ * Denna service hanterar all business logic för arbetsdagar i systemet.
+ * Den följer en enkel men robust design som fokuserar på:
+ * - Tydlig CRUD funktionalitet med proper validation
+ * - Konsistent error handling
+ * - Transaction management för data consistency
+ * - Läsbar kod som är lätt att underhålla
+ * - Rapportfunktionalitet för frontend integration
+ *
+ * Som student är detta ett bra exempel på hur man strukturerar
+ * service-lager som balanserar funktionalitet med enkelhet.
+ */
 @Service
-@Transactional(readOnly = true) // Default för performance optimization
+@Transactional(readOnly = true) // Default alla metoder till read-only för performance
 public class WorkDayService {
 
-    // Repository dependencies för data access
+    // =================================================================
+    // DEPENDENCY INJECTION - Repository och Mapper dependencies
+    // =================================================================
+
     private final WorkDayRepository workDayRepository;
     private final TaskRepository taskRepository;
     private final EmployeeRepository employeeRepository;
     private final EquipmentRepository equipmentRepository;
-
-    // Service dependencies för business logic coordination
-    private final TaskService taskService;
-    private final EmployeeService employeeService;
-
-    // Mapper för DTO transformations
+    private final CustomerRepository customerRepository;
     private final WorkDayMapper workDayMapper;
 
-    // Business rule constants - configurable i production systems
-    private static final int MAX_CONCURRENT_WORKDAYS_PER_EMPLOYEE = 1;
-    private static final int MAX_RETROACTIVE_DAYS = 30;
-    private static final int MAX_FUTURE_PLANNING_DAYS = 90;
-    private static final double MAX_DAILY_HOURS_PER_EMPLOYEE = 16.0;
-    private static final double MAX_TOTAL_DAILY_HOURS = 200.0;
+    // Business rule constants
+    private static final int MAX_EMPLOYEES_PER_WORKDAY = 20;
+    private static final int MAX_EQUIPMENT_ITEMS = 15;
+    private static final int MAX_HISTORICAL_DAYS = 90;
 
-    public WorkDayService(WorkDayRepository workDayRepository,
-                          TaskRepository taskRepository,
-                          EmployeeRepository employeeRepository,
-                          EquipmentRepository equipmentRepository,
-                          TaskService taskService,
-                          EmployeeService employeeService,
-                          WorkDayMapper workDayMapper) {
+    @Autowired
+    public WorkDayService(
+            WorkDayRepository workDayRepository,
+            TaskRepository taskRepository,
+            EmployeeRepository employeeRepository,
+            EquipmentRepository equipmentRepository,
+            CustomerRepository customerRepository,
+            WorkDayMapper workDayMapper) {
+
         this.workDayRepository = workDayRepository;
         this.taskRepository = taskRepository;
         this.employeeRepository = employeeRepository;
         this.equipmentRepository = equipmentRepository;
-        this.taskService = taskService;
-        this.employeeService = employeeService;
+        this.customerRepository = customerRepository;
         this.workDayMapper = workDayMapper;
     }
 
     // =================================================================
-    // CREATE OPERATIONS - COMPLEX BUSINESS PROCESS ORCHESTRATION
+    // CORE CRUD OPERATIONS - Grundläggande funktionalitet
     // =================================================================
 
     /**
-     * Skapar en ny WorkDay med comprehensive business rule validation.
+     * Skapar en ny WorkDay med full validation
      *
-     * Detta är den mest kritiska metoden i service eftersom den orchestrates
-     * creation av en complex aggregate root med multiple related entities.
-     * All validation måste succeed och all data måste be consistent innan
-     * any persistence occurs.
+     * Denna metod hanterar skapandet av en ny arbetsdag inklusive all
+     * nödvändig validering av business rules och entity references.
      *
-     * @param createDto Validated input data från client
-     * @return Newly created WorkDay med full related data
-     * @throws InvalidWorkDayException om business rules inte kan satisfied
-     * @throws DuplicateWorkDayException om conflicting WorkDay redan exists
+     * @param createDto Data för den nya arbetsdagen
+     * @return WorkDayResponseDto med den skapade arbetsdagen
+     * @throws InvalidWorkDayException när business rules bryts
+     * @throws DuplicateWorkDayException när Task+Date redan existerar
      */
-    @Transactional(
-            isolation = Isolation.READ_COMMITTED,
-            rollbackFor = Exception.class,
-            timeout = 30
-    )
+    @Transactional
     public WorkDayResponseDto createWorkDay(CreateWorkDayDto createDto) {
-        // Phase 1: Pre-creation validation - fail fast för obvious problems
-        validateCreateWorkDayRequest(createDto);
+        // Steg 1: Validera input
+        validateCreateWorkDayInput(createDto);
 
-        // Phase 2: Business rule validation - comprehensive cross-entity checks
-        validateBusinessRulesForCreation(createDto);
+        // Steg 2: Kontrollera att task existerar och är giltig
+        Task task = validateAndGetTask(createDto.getTaskId(), createDto.getDate());
 
-        // Phase 3: Resource availability validation - ensure no conflicts
-        validateResourceAvailabilityForCreation(createDto);
+        // Steg 3: Kontrollera för duplikater
+        checkForDuplicateWorkDay(task.getId(), createDto.getDate());
 
-        // Phase 4: Entity creation med transactional safety
-        WorkDay workDay = createWorkDayEntity(createDto);
+        // Steg 4: Skapa WorkDay entity med mapper
+        WorkDay workDay = workDayMapper.toEntity(createDto);
 
-        // Phase 5: Post-creation processing - audit, notifications, integration
-        processPostCreationActivities(workDay);
-
-        // Phase 6: Response generation med optimal expansion
-        return workDayMapper.toResponseDto(workDay, WorkDayMapper.EXPANSION_DETAILED);
+        // Steg 5: Spara och returnera response
+        WorkDay savedWorkDay = workDayRepository.save(workDay);
+        return workDayMapper.toResponseDto(savedWorkDay);
     }
 
     /**
-     * Validates basic request structure och field-level constraints.
+     * Hämtar en WorkDay by ID
      *
-     * Denna metod performs fast validation som can reject obviously
-     * invalid requests without expensive database operations.
+     * @param id WorkDay ID att hämta
+     * @return WorkDayResponseDto med data
+     * @throws WorkDayNotFoundException när WorkDay inte existerar
      */
-    private void validateCreateWorkDayRequest(CreateWorkDayDto createDto) {
+    public WorkDayResponseDto getWorkDayById(Long id) {
+        WorkDay workDay = findWorkDayById(id);
+        return workDayMapper.toResponseDto(workDay);
+    }
+
+    /**
+     * Hämtar alla WorkDays
+     *
+     * @return Lista av alla WorkDays
+     */
+    public List<WorkDayResponseDto> getAllWorkDays() {
+        List<WorkDay> workDays = workDayRepository.findAll();
+        return workDayMapper.toResponseDtoList(workDays);
+    }
+
+    /**
+     * Uppdaterar en befintlig WorkDay
+     *
+     * Denna metod tillämpar partial updates - endast fält som inte är null
+     * i updateDto kommer att uppdateras på den befintliga WorkDay.
+     *
+     * @param id WorkDay ID att uppdatera
+     * @param updateDto Fält att uppdatera
+     * @return Uppdaterad WorkDayResponseDto
+     * @throws WorkDayNotFoundException när WorkDay inte existerar
+     * @throws InvalidWorkDayException när update bryter business rules
+     */
+    @Transactional
+    public WorkDayResponseDto updateWorkDay(Long id, UpdateWorkDayDto updateDto) {
+        // Hämta befintlig WorkDay
+        WorkDay existingWorkDay = findWorkDayById(id);
+
+        // Validera att update är tillåten
+        validateWorkDayUpdateAllowed(existingWorkDay);
+
+        // Applicera updates
+        applyWorkDayUpdates(existingWorkDay, updateDto);
+
+        // Spara och returnera
+        WorkDay savedWorkDay = workDayRepository.save(existingWorkDay);
+        return workDayMapper.toResponseDto(savedWorkDay);
+    }
+
+    /**
+     * Tar bort en WorkDay
+     *
+     * @param id WorkDay ID att ta bort
+     * @throws WorkDayNotFoundException när WorkDay inte existerar
+     * @throws WorkDayDeletionException när deletion inte är tillåten
+     */
+    @Transactional
+    public void deleteWorkDay(Long id) {
+        WorkDay workDay = findWorkDayById(id);
+
+        // Validera att deletion är tillåten
+        validateWorkDayDeletionAllowed(workDay);
+
+        // Ta bort
+        workDayRepository.delete(workDay);
+    }
+
+    // =================================================================
+    // QUERY OPERATIONS - Specifika sökningar
+    // =================================================================
+
+    /**
+     * Hämtar WorkDays för ett specifikt datum
+     *
+     * @param date Datum att filtrera på
+     * @return Lista av WorkDays för det angivna datumet
+     */
+    public List<WorkDayResponseDto> getWorkDaysByDate(LocalDate date) {
+        if (date == null) {
+            throw new IllegalArgumentException("Datum kan inte vara null");
+        }
+
+        List<WorkDay> workDays = workDayRepository.findByDate(date);
+        return workDayMapper.toResponseDtoList(workDays);
+    }
+
+    /**
+     * Hämtar WorkDays inom ett datumintervall
+     *
+     * @param startDate Startdatum för intervallet
+     * @param endDate Slutdatum för intervallet
+     * @return Lista av WorkDays inom intervallet
+     */
+    public List<WorkDayResponseDto> getWorkDaysInDateRange(LocalDate startDate, LocalDate endDate) {
+        validateDateRange(startDate, endDate);
+
+        List<WorkDay> workDays = workDayRepository.findByDateBetween(startDate, endDate);
+        return workDayMapper.toResponseDtoList(workDays);
+    }
+
+    /**
+     * Hämtar WorkDays för ett specifikt Task
+     *
+     * @param taskId Task ID att filtrera på
+     * @return Lista av WorkDays för det angivna Task
+     */
+    public List<WorkDayResponseDto> getWorkDaysByTask(Long taskId) {
+        // Validera att Task existerar
+        Task task = findTaskById(taskId);
+
+        List<WorkDay> workDays = workDayRepository.findByTaskId(taskId);
+        return workDayMapper.toResponseDtoList(workDays);
+    }
+
+    /**
+     * Hämtar WorkDays för en specifik Employee
+     *
+     * @param employeeId Employee ID att filtrera på
+     * @return Lista av WorkDays där Employee har arbetat
+     */
+    public List<WorkDayResponseDto> getWorkDaysByEmployee(Long employeeId) {
+        // Validera att Employee existerar
+        Employee employee = findEmployeeById(employeeId);
+
+        List<WorkDay> workDays = workDayRepository.findByEmployeeId(employeeId);
+        return workDayMapper.toResponseDtoList(workDays);
+    }
+
+    /**
+     * Hämtar senaste WorkDays för dashboard
+     *
+     * @param days Antal dagar bakåt att hämta
+     * @return Lista av senaste WorkDays
+     */
+    public List<WorkDayResponseDto> getRecentWorkDays(int days) {
+        if (days <= 0) {
+            throw new IllegalArgumentException("Antal dagar måste vara positivt");
+        }
+
+        LocalDate endDate = LocalDate.now();
+        LocalDate startDate = endDate.minusDays(days);
+
+        return getWorkDaysInDateRange(startDate, endDate);
+    }
+
+    // =================================================================
+    // BUSINESS OPERATIONS - Specifika affärsoperationer
+    // =================================================================
+
+    /**
+     * Genererar statistik för WorkDays inom en period
+     *
+     * @param startDate Startdatum för statistik
+     * @param endDate Slutdatum för statistik
+     * @return Map med statistikdata
+     */
+    public Map<String, Object> generateWorkDayStatistics(LocalDate startDate, LocalDate endDate) {
+        validateDateRange(startDate, endDate);
+
+        List<WorkDay> workDays = workDayRepository.findByDateBetween(startDate, endDate);
+
+        Map<String, Object> statistics = new HashMap<>();
+        statistics.put("period", Map.of("start", startDate, "end", endDate));
+        statistics.put("totalWorkDays", workDays.size());
+
+        if (!workDays.isEmpty()) {
+            // Beräkna grundläggande statistik
+            double totalHours = workDays.stream()
+                    .mapToDouble(WorkDay::getTotalWorkHours)
+                    .sum();
+            statistics.put("totalHours", totalHours);
+
+            long uniqueEmployees = workDays.stream()
+                    .flatMap(wd -> wd.getEmployeeTimes().stream())
+                    .map(et -> et.getEmployee().getId())
+                    .distinct()
+                    .count();
+            statistics.put("uniqueEmployees", uniqueEmployees);
+
+            long uniqueTasks = workDays.stream()
+                    .map(wd -> wd.getTask().getId())
+                    .distinct()
+                    .count();
+            statistics.put("uniqueTasks", uniqueTasks);
+
+            statistics.put("averageHoursPerWorkDay", totalHours / workDays.size());
+            if (uniqueEmployees > 0) {
+                statistics.put("averageHoursPerEmployee", totalHours / uniqueEmployees);
+            }
+        } else {
+            statistics.put("totalHours", 0.0);
+            statistics.put("uniqueEmployees", 0);
+            statistics.put("uniqueTasks", 0);
+            statistics.put("averageHoursPerWorkDay", 0.0);
+            statistics.put("averageHoursPerEmployee", 0.0);
+        }
+
+        return statistics;
+    }
+
+    // =================================================================
+    // RAPPORT OPERATIONS - Frontend Integration Support
+    // =================================================================
+
+    /**
+     * Beräknar arbetstimmar för en specifik medarbetare
+     *
+     * Denna metod stöder frontend rapportfunktionalitet genom att aggregera
+     * arbetstimmar för en medarbetare med optional datumfiltrering.
+     * Använder samma error handling patterns som resten av service.
+     *
+     * @param employeeId Medarbetare att beräkna timmar för
+     * @param date Optional specifikt datum (null för alla datum)
+     * @return Lista med arbetstidsdata för frontend
+     */
+    public List<Map<String, Object>> calculateEmployeeWorkHours(Long employeeId, LocalDate date) {
+        // Validera att employee existerar med samma pattern som andra metoder
+        Employee employee = findEmployeeById(employeeId);
+
+        List<WorkDay> workDays;
+        if (date != null) {
+            // Filtrera på specifikt datum - använd befintlig repository pattern
+            workDays = workDayRepository.findByDate(date).stream()
+                    .filter(wd -> wd.getEmployeeTimes().stream()
+                            .anyMatch(et -> et.getEmployee().getId().equals(employeeId)))
+                    .collect(Collectors.toList());
+        } else {
+            // Hämta alla arbetsdagar för medarbetaren
+            workDays = workDayRepository.findByEmployeeId(employeeId);
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+
+        for (WorkDay workDay : workDays) {
+            // Hitta medarbetarens arbetstid för denna dag
+            Optional<EmployeeTime> employeeTime = workDay.getEmployeeTimes().stream()
+                    .filter(et -> et.getEmployee().getId().equals(employeeId))
+                    .findFirst();
+
+            if (employeeTime.isPresent()) {
+                EmployeeTime et = employeeTime.get();
+
+                // Beräkna arbetstimmar med samma logik som frontend förväntar sig
+                double workHours = et.getTotalHours().doubleValue();
+                double driveTime = et.getDriveTimeHours().doubleValue();
+
+                Map<String, Object> dayData = new HashMap<>();
+                dayData.put("date", workDay.getDate().toString());
+                dayData.put("taskNumber", workDay.getTask().getNumber());
+                dayData.put("totalHours", workHours);
+                dayData.put("driveTime", driveTime);
+                dayData.put("startTime", et.getStartTime().toString());
+                dayData.put("endTime", et.getEndTime().toString());
+                dayData.put("lunchMinutes", et.getLunchMinutes());
+
+                result.add(dayData);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Beräknar arbetstimmar för en specifik kunds projekt
+     *
+     * Denna metod aggregerar all arbetstid som lagts på en kunds uppdrag
+     * inom en specifik period. Följer samma validation patterns som andra metoder.
+     *
+     * @param customerId Kund att beräkna arbetstid för
+     * @param date Optional specifikt datum (null för alla datum)
+     * @return Lista med arbetstidsdata per uppdrag för kunden
+     */
+    public List<Map<String, Object>> calculateCustomerWorkHours(Long customerId, LocalDate date) {
+        // Validera att customer existerar med samma error handling approach
+        Customer customer = findCustomerById(customerId);
+
+        // Hämta alla uppdrag för kunden
+        List<Task> customerTasks = taskRepository.findByCustomerId(customerId);
+
+        if (customerTasks.isEmpty()) {
+            return new ArrayList<>(); // Inga uppdrag för denna kund
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+
+        for (Task task : customerTasks) {
+            List<WorkDay> workDays;
+            if (date != null) {
+                // Filtrera på specifikt datum och uppdrag
+                workDays = workDayRepository.findByDate(date).stream()
+                        .filter(wd -> wd.getTask().getId().equals(task.getId()))
+                        .collect(Collectors.toList());
+            } else {
+                // Hämta alla arbetsdagar för uppdraget
+                workDays = workDayRepository.findByTaskId(task.getId());
+            }
+
+            for (WorkDay workDay : workDays) {
+                // Beräkna total arbetstid för dagen med samma logik som frontend
+                double totalHours = workDay.getEmployeeTimes().stream()
+                        .mapToDouble(et -> et.getTotalHours().doubleValue())
+                        .sum();
+
+                int employeeCount = workDay.getEmployeeTimes().size();
+
+                Map<String, Object> dayData = new HashMap<>();
+                dayData.put("date", workDay.getDate().toString());
+                dayData.put("taskNumber", task.getNumber());
+                dayData.put("totalHours", totalHours);
+                dayData.put("employeeCount", employeeCount);
+                dayData.put("taskId", task.getId());
+
+                result.add(dayData);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Genererar månadsrapport för alla medarbetare
+     *
+     * Skapar en sammanfattande rapport som visar total arbetstid och körtid
+     * för alla medarbetare under en specifik månad. Följer samma validation approach.
+     *
+     * @param yearMonth Månad att generera rapport för (format: YYYY-MM)
+     * @return Månadsrapport med alla medarbetares arbetstid
+     */
+    public Map<String, Object> generateMonthlyReport(String yearMonth) {
+        // Parsa månad från string format med samma error handling pattern
+        if (yearMonth == null || !yearMonth.matches("\\d{4}-\\d{2}")) {
+            throw new IllegalArgumentException("Ogiltigt månadsformat. Använd YYYY-MM");
+        }
+
+        String[] parts = yearMonth.split("-");
+        int year = Integer.parseInt(parts[0]);
+        int month = Integer.parseInt(parts[1]);
+
+        // Validera rimliga värden
+        if (year < 2020 || year > 2030 || month < 1 || month > 12) {
+            throw new IllegalArgumentException("Ogiltiga datum värden för månad: " + yearMonth);
+        }
+
+        // Beräkna startdatum och slutdatum för månaden
+        LocalDate startDate = LocalDate.of(year, month, 1);
+        LocalDate endDate = startDate.withDayOfMonth(startDate.lengthOfMonth());
+
+        // Hämta alla medarbetare
+        List<Employee> allEmployees = employeeRepository.findAll();
+
+        List<Map<String, Object>> employeeReports = new ArrayList<>();
+
+        for (Employee employee : allEmployees) {
+            // Beräkna arbetstimmar för denna medarbetare under månaden
+            List<Map<String, Object>> workData = calculateEmployeeWorkHours(employee.getId(), null);
+
+            // Filtrera på månaden med samma logik som frontend
+            double totalHours = workData.stream()
+                    .filter(wd -> {
+                        String dateStr = (String) wd.get("date");
+                        return dateStr.startsWith(yearMonth);
+                    })
+                    .mapToDouble(wd -> (Double) wd.get("totalHours"))
+                    .sum();
+
+            double totalDriveHours = workData.stream()
+                    .filter(wd -> {
+                        String dateStr = (String) wd.get("date");
+                        return dateStr.startsWith(yearMonth);
+                    })
+                    .mapToDouble(wd -> (Double) wd.get("driveTime"))
+                    .sum();
+
+            Map<String, Object> employeeReport = new HashMap<>();
+            employeeReport.put("employee", employee.getName());
+            employeeReport.put("employeeId", employee.getId());
+            employeeReport.put("totalHours", totalHours);
+            employeeReport.put("totalDriveHours", totalDriveHours);
+
+            employeeReports.add(employeeReport);
+        }
+
+        // Skapa sammanfattande rapport med samma structure som frontend förväntar
+        Map<String, Object> report = new HashMap<>();
+        report.put("month", yearMonth);
+        report.put("employeeReports", employeeReports);
+        report.put("totalEmployees", allEmployees.size());
+
+        // Beräkna totalsummor
+        double grandTotalHours = employeeReports.stream()
+                .mapToDouble(er -> (Double) er.get("totalHours"))
+                .sum();
+        double grandTotalDriveHours = employeeReports.stream()
+                .mapToDouble(er -> (Double) er.get("totalDriveHours"))
+                .sum();
+
+        report.put("grandTotalHours", grandTotalHours);
+        report.put("grandTotalDriveHours", grandTotalDriveHours);
+
+        return report;
+    }
+
+    // =================================================================
+    // PRIVATE VALIDATION METHODS - Intern validering
+    // =================================================================
+
+    /**
+     * Validerar input för att skapa WorkDay
+     */
+    private void validateCreateWorkDayInput(CreateWorkDayDto createDto) {
         if (createDto == null) {
             throw new IllegalArgumentException("CreateWorkDayDto kan inte vara null");
         }
 
-        // Validate using our sophisticated validation utils
-        WorkDayValidationUtils.ValidationResult dateResult =
-                WorkDayValidationUtils.validateWorkDayDate(createDto.getDate(), false);
-
-        if (!dateResult.isValid()) {
-            throw new InvalidWorkDayException("Ogiltigt datum",
-                    dateResult.getMessage().orElse("Okänt datumfel"));
+        if (createDto.getDate() == null) {
+            // Använd RuntimeException med descriptive message för business rule violations
+            throw new RuntimeException("Datum saknas - Arbetsdagens datum måste anges");
         }
 
-        // Validate employee time entries på DTO level
+        if (createDto.getTaskId() == null) {
+            throw new RuntimeException("Task saknas - Task måste anges för arbetsdagen");
+        }
+
         if (createDto.getEmployeeTimes() == null || createDto.getEmployeeTimes().isEmpty()) {
-            throw new InvalidWorkDayException("Arbetstider saknas",
-                    "Minst en medarbetares arbetstid måste registreras");
+            throw new RuntimeException("Inga arbetstider - Minst en medarbetares arbetstid måste anges");
         }
 
-        // Check för duplicate employees i input
-        if (createDto.hasDuplicateEmployees()) {
-            throw new InvalidWorkDayException("Dubletter av medarbetare",
-                    "Samma medarbetare kan inte registreras flera gånger för samma arbetsdag");
+        // Validera antal medarbetare
+        if (createDto.getEmployeeTimes().size() > MAX_EMPLOYEES_PER_WORKDAY) {
+            throw new RuntimeException("För många medarbetare - Maximum " + MAX_EMPLOYEES_PER_WORKDAY + " medarbetare per arbetsdag");
         }
 
-        // Validate equipment duplicates
-        if (createDto.hasDuplicateEquipment()) {
-            throw new InvalidWorkDayException("Dubletter av utrustning",
-                    "Samma utrustning kan inte registreras flera gånger för samma arbetsdag");
-        }
-    }
-
-    /**
-     * Validates complex business rules som require cross-entity coordination.
-     *
-     * Denna metod performs expensive validation som involves database
-     * queries och complex business logic evaluation.
-     */
-    private void validateBusinessRulesForCreation(CreateWorkDayDto createDto) {
-        // Validate task suitability och availability
-        Task task = taskRepository.findById(createDto.getTaskId())
-                .orElseThrow(() -> new InvalidWorkDayException("Task inte hittad",
-                        "Uppdraget med ID " + createDto.getTaskId() + " finns inte"));
-
-        WorkDayValidationUtils.ValidationResult taskResult =
-                WorkDayValidationUtils.validateTaskSuitability(task, createDto.getDate());
-
-        if (!taskResult.isValid()) {
-            throw new InvalidWorkDayException("Task ej lämplig",
-                    taskResult.getMessage().orElse("Task kan inte användas för denna arbetsdag"));
+        // Validera antal utrustning om det finns
+        if (createDto.getEquipmentUsage() != null &&
+                createDto.getEquipmentUsage().size() > MAX_EQUIPMENT_ITEMS) {
+            throw new RuntimeException("För mycket utrustning - Maximum " + MAX_EQUIPMENT_ITEMS + " utrustningsobjekt per arbetsdag");
         }
 
-        // Validate all employees är suitable för assignment
-        List<Employee> employees = resolveEmployeesFromDto(createDto);
-        List<WorkDay> existingWorkDays = workDayRepository.findByDate(createDto.getDate());
-
-        WorkDayValidationUtils.ValidationResult employeeResult =
-                WorkDayValidationUtils.validateEmployeeAssignments(employees, createDto.getDate(), existingWorkDays);
-
-        if (!employeeResult.isValid()) {
-            throw new InvalidWorkDayException("Medarbetarproblem",
-                    employeeResult.getMessage().orElse("Ett eller flera medarbetarproblem upptäcktes"));
-        }
-
-        // Validate supervisor if specified
-        if (createDto.getSupervisorId() != null) {
-            Employee supervisor = employeeRepository.findById(createDto.getSupervisorId())
-                    .orElseThrow(() -> new InvalidWorkDayException("Arbetsledare inte hittad",
-                            "Arbetsledaren med ID " + createDto.getSupervisorId() + " finns inte"));
-
-            if (!supervisor.canBeAssignedToWork()) {
-                throw new InvalidWorkDayException("Inaktiv arbetsledare",
-                        "Arbetsledaren '" + supervisor.getName() + "' är inaktiv och kan inte tilldelas");
-            }
-        }
-
-        // Validate equipment availability
-        if (createDto.getEquipmentUsage() != null && !createDto.getEquipmentUsage().isEmpty()) {
-            validateEquipmentAvailabilityForCreation(createDto);
+        // Validera datum inte är för långt fram i tiden
+        if (createDto.getDate().isAfter(LocalDate.now().plusDays(365))) {
+            throw new RuntimeException("Datum för långt fram - WorkDay kan inte skapas mer än ett år fram i tiden");
         }
     }
 
     /**
-     * Validates att resources är available och inte conflicting.
+     * Validerar och hämtar Task
      */
-    private void validateResourceAvailabilityForCreation(CreateWorkDayDto createDto) {
-        // Check för existing WorkDay för samma task och date
-        boolean workDayExists = workDayRepository.existsByTaskIdAndDate(
-                createDto.getTaskId(), createDto.getDate());
+    private Task validateAndGetTask(Long taskId, LocalDate workDayDate) {
+        Task task = findTaskById(taskId);
 
-        if (workDayExists) {
+        // Kontrollera att task kan ta emot arbetstid
+        if (!task.getStatus().equals(Task.TaskStatus.ACTIVE)) {
+            throw new RuntimeException("Task inte aktiv - Endast aktiva uppdrag kan ha arbetstid registrerad");
+        }
+
+        return task;
+    }
+
+    /**
+     * Kontrollerar för duplikat WorkDay
+     */
+    private void checkForDuplicateWorkDay(Long taskId, LocalDate date) {
+        Optional<WorkDay> existingWorkDay = workDayRepository.findByTaskIdAndDate(taskId, date);
+        if (existingWorkDay.isPresent()) {
+            // Använd enkel String constructor för att undvika constructor signature problem
             throw new DuplicateWorkDayException(
-                    "En arbetsdag för detta uppdrag och datum finns redan",
-                    createDto.getTaskId(), createDto.getDate());
-        }
-
-        // Check för employee conflicts på samma datum
-        for (CreateWorkDayDto.EmployeeTimeDto employeeTimeDto : createDto.getEmployeeTimes()) {
-            boolean employeeAlreadyWorking = employeeRepository.isEmployeeRegisteredForWorkDay(
-                    employeeTimeDto.getEmployeeId(), createDto.getDate(), createDto.getTaskId());
-
-            if (employeeAlreadyWorking) {
-                Employee employee = employeeRepository.findById(employeeTimeDto.getEmployeeId())
-                        .orElseThrow(() -> new InvalidWorkDayException("Employee inte hittad",
-                                "Medarbetare med ID " + employeeTimeDto.getEmployeeId() + " finns inte"));
-
-                throw new InvalidWorkDayException("Medarbetarkonflikt",
-                        "Medarbetaren '" + employee.getName() + "' är redan registrerad för arbete på " + createDto.getDate());
-            }
+                    "Arbetsdag existerar redan för uppdrag " + taskId + " på datum " + date);
         }
     }
 
     /**
-     * Creates WorkDay entity med all related entities inom transactional context.
+     * Validerar att WorkDay update är tillåten
      */
-    private WorkDay createWorkDayEntity(CreateWorkDayDto createDto) {
-        try {
-            // Transform DTO till entity using sophisticated mapper
-            WorkDay workDay = workDayMapper.toEntity(createDto);
+    private void validateWorkDayUpdateAllowed(WorkDay workDay) {
+        // Kontrollera att WorkDay inte är för gammal
+        LocalDate today = LocalDate.now();
+        long daysOld = java.time.temporal.ChronoUnit.DAYS.between(workDay.getDate(), today);
 
-            // Additional business logic setup
-            enrichWorkDayForCreation(workDay);
-
-            // Persist med cascade för related entities
-            WorkDay savedWorkDay = workDayRepository.save(workDay);
-
-            // Validate post-persistence state
-            validatePostCreationState(savedWorkDay);
-
-            return savedWorkDay;
-
-        } catch (Exception e) {
-            // Wrap any unexpected errors i business exception
-            throw new InvalidWorkDayException("Skapande misslyckades",
-                    "Ett oväntat fel uppstod vid skapande av arbetstag: " + e.getMessage(), e);
+        if (daysOld > MAX_HISTORICAL_DAYS) {
+            throw new RuntimeException("För gammal för uppdatering - WorkDay är " + daysOld +
+                    " dagar gammal. Maximum ålder för uppdatering: " + MAX_HISTORICAL_DAYS + " dagar");
         }
     }
 
     /**
-     * Enriches WorkDay med computed fields och business logic.
+     * Applicerar updates på WorkDay
      */
-    private void enrichWorkDayForCreation(WorkDay workDay) {
-        // Validate aggregated work time is reasonable
-        double totalHours = workDay.getTotalWorkHours();
-        if (totalHours > MAX_TOTAL_DAILY_HOURS) {
-            throw new InvalidWorkDayException("För många arbetstimmar",
-                    String.format("Total arbetstid %.1f timmar överstiger maximum %.1f timmar per dag",
-                            totalHours, MAX_TOTAL_DAILY_HOURS));
+    private void applyWorkDayUpdates(WorkDay existingWorkDay, UpdateWorkDayDto updateDto) {
+        // Uppdatera endast non-null fält (delta updates)
+        if (updateDto.getDate() != null) {
+            existingWorkDay.setDate(updateDto.getDate());
         }
 
-        // Validate individual employee work times
-        for (EmployeeTime employeeTime : workDay.getEmployeeTimes()) {
-            double individualHours = employeeTime.getTotalHours().doubleValue();
-            if (individualHours > MAX_DAILY_HOURS_PER_EMPLOYEE) {
-                throw new InvalidWorkDayException("För många timmar per medarbetare",
-                        String.format("Medarbetaren '%s' har %.1f timmar vilket överstiger maximum %.1f timmar per dag",
-                                employeeTime.getEmployee().getName(), individualHours, MAX_DAILY_HOURS_PER_EMPLOYEE));
-            }
+        if (updateDto.getNotes() != null) {
+            existingWorkDay.setNotes(updateDto.getNotes());
+        }
 
-            // Validate work time entry using comprehensive validation
-            employeeService.validateWorkTimeEntry(employeeTime);
+        // Note: I full implementation skulle vi hantera employee times och equipment updates här
+        // För nu fokuserar vi på grundläggande fält-updates
+    }
+
+    /**
+     * Validerar att WorkDay deletion är tillåten
+     */
+    private void validateWorkDayDeletionAllowed(WorkDay workDay) {
+        // Kontrollera ålder
+        LocalDate today = LocalDate.now();
+        long daysOld = java.time.temporal.ChronoUnit.DAYS.between(workDay.getDate(), today);
+
+        if (daysOld > MAX_HISTORICAL_DAYS) {
+            throw new RuntimeException("WorkDay är " + daysOld +
+                    " dagar gammal och kan inte tas bort. Maximum ålder för borttagning: " +
+                    MAX_HISTORICAL_DAYS + " dagar");
+        }
+
+        // Kontrollera att det finns arbetstid registrerad
+        if (!workDay.getEmployeeTimes().isEmpty()) {
+            throw new RuntimeException("WorkDay har " + workDay.getEmployeeTimes().size() +
+                    " arbetstidsregistreringar. Ta bort alla arbetstider innan borttagning av arbetsdagen.");
         }
     }
 
     /**
-     * Validates att persisted state är consistent med business rules.
+     * Validerar datumintervall
      */
-    private void validatePostCreationState(WorkDay savedWorkDay) {
-        // Comprehensive validation using our validation utils
-        List<WorkDay> existingWorkDays = workDayRepository.findByDate(savedWorkDay.getDate());
-        List<WorkDayEquipment> existingEquipment = workDayRepository.findByDate(savedWorkDay.getDate())
-                .stream()
-                .flatMap(wd -> wd.getEquipmentUsed().stream())
-                .collect(Collectors.toList());
-
-        WorkDayValidationUtils.ComprehensiveValidationResult validationResult =
-                WorkDayValidationUtils.validateCompleteWorkDay(
-                        savedWorkDay, false, existingWorkDays, existingEquipment);
-
-        if (!validationResult.isValid()) {
-            throw new InvalidWorkDayException("Post-creation validation misslyckades",
-                    "Arbetsdagen kunde skapas men uppfyller inte alla business rules: " +
-                            String.join("; ", validationResult.getErrorMessages()));
+    private void validateDateRange(LocalDate startDate, LocalDate endDate) {
+        if (startDate == null) {
+            throw new IllegalArgumentException("Startdatum kan inte vara null");
         }
-    }
+        if (endDate == null) {
+            throw new IllegalArgumentException("Slutdatum kan inte vara null");
+        }
+        if (startDate.isAfter(endDate)) {
+            throw new IllegalArgumentException("Startdatum kan inte vara efter slutdatum");
+        }
 
-    /**
-     * Processes post-creation activities som audit logging och notifications.
-     */
-    private void processPostCreationActivities(WorkDay workDay) {
-        try {
-            // Audit logging för compliance
-            logWorkDayCreation(workDay);
-
-            // Business event publication för integration
-            publishWorkDayCreatedEvent(workDay);
-
-            // Update related entity statistics
-            updateTaskStatistics(workDay.getTask());
-
-        } catch (Exception e) {
-            // Log errors men don't fail entire operation för non-critical activities
-            logNonCriticalError("Post-creation processing", e);
+        // Kontrollera att intervallet inte är för stort
+        long daysBetween = java.time.temporal.ChronoUnit.DAYS.between(startDate, endDate);
+        if (daysBetween > 365) {
+            throw new IllegalArgumentException("Datumintervall kan inte vara längre än ett år");
         }
     }
 
     // =================================================================
-    // READ OPERATIONS - OPTIMIZED QUERY STRATEGIES
+    // PRIVATE HELPER METHODS - Gemensamma hjälpmetoder
     // =================================================================
 
     /**
-     * Hämtar WorkDay by ID med intelligent expansion baserat på usage context.
-     *
-     * @param id WorkDay ID
-     * @param expansionHint Optional hint för desired expansion level
-     * @return WorkDay response DTO eller null om inte found
+     * Hittar WorkDay by ID med error handling
      */
-    public Optional<WorkDayResponseDto> getWorkDayById(Long id, String expansionHint) {
+    private WorkDay findWorkDayById(Long id) {
         if (id == null) {
-            return Optional.empty();
+            throw new IllegalArgumentException("WorkDay ID kan inte vara null");
         }
 
-        Optional<WorkDay> workDayOpt = workDayRepository.findById(id);
-        if (workDayOpt.isEmpty()) {
-            return Optional.empty();
-        }
-
-        WorkDay workDay = workDayOpt.get();
-
-        // Use provided expansion hint eller determine automatically
-        String expansionLevel = expansionHint != null ? expansionHint :
-                determineOptimalExpansionForSingleEntity(workDay);
-
-        WorkDayResponseDto responseDto = workDayMapper.toResponseDto(workDay, expansionLevel);
-        return Optional.of(responseDto);
+        return workDayRepository.findById(id)
+                .orElseThrow(() -> new WorkDayNotFoundException(
+                        "WorkDay med ID " + id + " finns inte"));
     }
 
     /**
-     * Hämtar WorkDays för specific date med performance optimization.
-     *
-     * @param date Target date
-     * @param includeDetails Whether att include detailed information
-     * @return List av WorkDay responses
+     * Hittar Task by ID med error handling
      */
-    public List<WorkDayResponseDto> getWorkDaysByDate(LocalDate date, boolean includeDetails) {
-        if (date == null) {
-            throw new IllegalArgumentException("Date kan inte vara null");
-        }
-
-        List<WorkDay> workDays = workDayRepository.findByDate(date);
-
-        String expansionLevel = includeDetails ?
-                WorkDayMapper.EXPANSION_DETAILED : WorkDayMapper.EXPANSION_SUMMARY;
-
-        return workDayMapper.toResponseDtoList(workDays, expansionLevel);
-    }
-
-    /**
-     * Hämtar WorkDays för specific task med comprehensive data.
-     *
-     * @param taskId Task ID
-     * @param includeMetrics Whether att include business metrics
-     * @return List av WorkDay responses för the task
-     */
-    public List<WorkDayResponseDto> getWorkDaysByTask(Long taskId, boolean includeMetrics) {
+    private Task findTaskById(Long taskId) {
         if (taskId == null) {
             throw new IllegalArgumentException("Task ID kan inte vara null");
         }
 
-        // Validate that task exists
-        if (!taskRepository.existsById(taskId)) {
-            throw new IllegalArgumentException("Task med ID " + taskId + " finns inte");
-        }
-
-        List<WorkDay> workDays = workDayRepository.findByTaskId(taskId);
-
-        String expansionLevel = includeMetrics ?
-                WorkDayMapper.EXPANSION_FULL : WorkDayMapper.EXPANSION_DETAILED;
-
-        return workDayMapper.toResponseDtoList(workDays, expansionLevel);
+        return taskRepository.findById(taskId)
+                .orElseThrow(() -> new TaskNotFoundException(
+                        "Task med ID " + taskId + " finns inte"));
     }
 
     /**
-     * Söker WorkDays within date range med advanced filtering options.
+     * Hittar Employee by ID med error handling
+     */
+    private Employee findEmployeeById(Long employeeId) {
+        if (employeeId == null) {
+            throw new IllegalArgumentException("Employee ID kan inte vara null");
+        }
+
+        return employeeRepository.findById(employeeId)
+                .orElseThrow(() -> new EmployeeNotFoundException(
+                        "Employee med ID " + employeeId + " finns inte"));
+    }
+
+    /**
+     * Hittar Equipment by ID med error handling
+     */
+    private Equipment findEquipmentById(Long equipmentId) {
+        if (equipmentId == null) {
+            throw new IllegalArgumentException("Equipment ID kan inte vara null");
+        }
+
+        return equipmentRepository.findById(equipmentId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Equipment med ID " + equipmentId + " finns inte"));
+    }
+
+    /**
+     * Hittar Customer by ID med error handling
      *
-     * @param startDate Start av date range (inclusive)
-     * @param endDate End av date range (inclusive)
-     * @param includeMetrics Whether att include business intelligence metrics
-     * @return List av matching WorkDay responses
+     * Ny helper metod för rapportfunktionalitet som följer samma pattern
+     * som de andra find-metoderna för konsistens.
      */
-    public List<WorkDayResponseDto> getWorkDaysInDateRange(LocalDate startDate, LocalDate endDate,
-                                                           boolean includeMetrics) {
-        // Validate date range using our validation utils
-        WorkDayValidationUtils.ValidationResult dateRangeResult =
-                WorkDayValidationUtils.validateReportDateRange(startDate, endDate);
-
-        if (!dateRangeResult.isValid()) {
-            throw new IllegalArgumentException("Ogiltigt datumintervall: " +
-                    dateRangeResult.getMessage().orElse("Okänt datumfel"));
+    private Customer findCustomerById(Long customerId) {
+        if (customerId == null) {
+            throw new IllegalArgumentException("Customer ID kan inte vara null");
         }
 
-        List<WorkDay> workDays = workDayRepository.findByDateBetween(startDate, endDate);
-
-        // Use performance-optimized expansion för large result sets
-        String expansionLevel = workDays.size() > 20 ?
-                WorkDayMapper.EXPANSION_SUMMARY :
-                (includeMetrics ? WorkDayMapper.EXPANSION_DETAILED : WorkDayMapper.EXPANSION_SUMMARY);
-
-        return workDayMapper.toResponseDtoList(workDays, expansionLevel);
-    }
-
-    // =================================================================
-    // UPDATE OPERATIONS - SOPHISTICATED STATE TRANSITION MANAGEMENT
-    // =================================================================
-
-
-    @Transactional(
-            isolation = Isolation.REPEATABLE_READ,
-            rollbackFor = Exception.class,
-            timeout = 45
-    )
-    public WorkDayResponseDto updateWorkDay(Long workDayId, UpdateWorkDayDto updateDto) {
-        // Phase 1: Entity retrieval med existence validation
-        WorkDay existingWorkDay = retrieveWorkDayForUpdate(workDayId);
-
-        // Phase 2: Pre-update validation - version control och basic checks
-        validateUpdateRequest(existingWorkDay, updateDto);
-
-        // Phase 3: Business rule validation för proposed changes
-        validateBusinessRulesForUpdate(existingWorkDay, updateDto);
-
-        // Phase 4: State transition execution med careful error handling
-        WorkDay updatedWorkDay = executeWorkDayUpdate(existingWorkDay, updateDto);
-
-        // Phase 5: Post-update processing - audit, notifications, consistency checks
-        processPostUpdateActivities(existingWorkDay, updatedWorkDay, updateDto);
-
-        // Phase 6: Response generation med appropriate expansion
-        return workDayMapper.toResponseDto(updatedWorkDay, WorkDayMapper.EXPANSION_EDIT);
-    }
-
-    /**
-     * Retrieves WorkDay för update med proper locking strategy.
-     */
-    private WorkDay retrieveWorkDayForUpdate(Long workDayId) {
-        if (workDayId == null) {
-            throw new IllegalArgumentException("WorkDay ID kan inte vara null");
-        }
-
-        return workDayRepository.findById(workDayId)
-                .orElseThrow(() -> new WorkDayNotFoundException(
-                        "WorkDay med ID " + workDayId + " finns inte"));
-    }
-
-    /**
-     * Validates update request structure och version control.
-     */
-    private void validateUpdateRequest(WorkDay existingWorkDay, UpdateWorkDayDto updateDto) {
-        if (updateDto == null) {
-            throw new IllegalArgumentException("UpdateWorkDayDto kan inte vara null");
-        }
-
-        // Check om WorkDay can be updated enligt business rules
-        if (!isWorkDayEditable(existingWorkDay)) {
-            throw new InvalidWorkDayTransitionException(
-                    "Arbetsdagen kan inte längre redigeras",
-                    "WorkDay från " + existingWorkDay.getDate() + " kan inte redigeras enligt företagspolicy");
-        }
-
-        // Validate destructive operations have proper authorization
-        if (updateDto.hasDestructiveOperations() && !updateDto.isConfirmDestructiveChanges()) {
-            throw new InvalidWorkDayTransitionException(
-                    "Destructive changes kräver bekräftelse",
-                    "Denna uppdatering innehåller destructive operations som kräver explicit bekräftelse");
-        }
-
-        // Validate that user understands consequences av override flags
-        if (updateDto.isOverrideBusinessRules() || updateDto.isForceConcurrentUpdate()) {
-            if (!updateDto.isConfirmDestructiveChanges()) {
-                throw new InvalidWorkDayTransitionException(
-                        "Override operations kräver bekräftelse",
-                        "Business rule overrides kräver explicit bekräftelse av consequences");
-            }
-        }
-    }
-
-    /**
-     * Validates business rules för proposed update changes.
-     */
-    private void validateBusinessRulesForUpdate(WorkDay existingWorkDay, UpdateWorkDayDto updateDto) {
-        // Validate date changes if specified
-        if (updateDto.getDate() != null && !updateDto.getDate().equals(existingWorkDay.getDate())) {
-            validateDateChangeBusinessRules(existingWorkDay, updateDto.getDate());
-        }
-
-        // Validate task changes if specified
-        if (updateDto.getTaskId() != null && !updateDto.getTaskId().equals(existingWorkDay.getTask().getId())) {
-            validateTaskChangeBusinessRules(existingWorkDay, updateDto.getTaskId());
-        }
-
-        // Validate employee time changes enligt strategy
-        if (updateDto.getEmployeeTimeStrategy() != UpdateWorkDayDto.CollectionUpdateStrategy.NO_CHANGE) {
-            validateEmployeeTimeUpdateBusinessRules(existingWorkDay, updateDto);
-        }
-
-        // Validate equipment changes enligt strategy
-        if (updateDto.getEquipmentStrategy() != UpdateWorkDayDto.CollectionUpdateStrategy.NO_CHANGE) {
-            validateEquipmentUpdateBusinessRules(existingWorkDay, updateDto);
-        }
-    }
-
-    /**
-     * Executes the actual update using sophisticated mapper coordination.
-     */
-    private WorkDay executeWorkDayUpdate(WorkDay existingWorkDay, UpdateWorkDayDto updateDto) {
-        try {
-            // Use mapper för sophisticated update logic
-            WorkDay updatedWorkDay = workDayMapper.updateEntityFromDto(existingWorkDay, updateDto);
-
-            // Additional business logic enrichment efter update
-            enrichWorkDayForUpdate(updatedWorkDay, updateDto);
-
-            // Persist changes med optimistic locking protection
-            WorkDay savedWorkDay = workDayRepository.save(updatedWorkDay);
-
-            // Validate post-update consistency
-            validatePostUpdateConsistency(savedWorkDay);
-
-            return savedWorkDay;
-
-        } catch (Exception e) {
-            // Comprehensive error handling med context preservation
-            handleUpdateExecutionError(existingWorkDay, updateDto, e);
-            throw e; // Re-throw efter logging
-        }
-    }
-
-    // =================================================================
-    // DELETE OPERATIONS - SAFE REMOVAL MED BUSINESS RULE ENFORCEMENT
-    // =================================================================
-
-    /**
-     * Safely removes WorkDay med comprehensive validation och cleanup.
-     *
-     * Deletion av WorkDay är potentially destructive eftersom det affects
-     * payroll calculations, project reports, och audit trails. This operation
-     * requires careful validation och often should be restricted eller
-     * replaced med "soft delete" patterns.
-     *
-     * @param workDayId ID av WorkDay att remove
-     * @param forceDelete Whether att bypass certain safety checks
-     * @throws WorkDayDeletionException om deletion violates business rules
-     */
-    @Transactional(
-            isolation = Isolation.SERIALIZABLE,
-            rollbackFor = Exception.class,
-            timeout = 30
-    )
-    public void deleteWorkDay(Long workDayId, boolean forceDelete) {
-        // Phase 1: Retrieve WorkDay med full related data
-        WorkDay workDay = retrieveWorkDayForDeletion(workDayId);
-
-        // Phase 2: Validate deletion är safe enligt business rules
-        validateWorkDayDeletionSafety(workDay, forceDelete);
-
-        // Phase 3: Pre-deletion cleanup och preparation
-        prepareWorkDayForDeletion(workDay);
-
-        // Phase 4: Execute deletion med cascade handling
-        executeWorkDayDeletion(workDay);
-
-        // Phase 5: Post-deletion cleanup och audit logging
-        processPostDeletionActivities(workDay);
-    }
-
-    /**
-     * Retrieves WorkDay för deletion med all related entities.
-     */
-    private WorkDay retrieveWorkDayForDeletion(Long workDayId) {
-        if (workDayId == null) {
-            throw new IllegalArgumentException("WorkDay ID kan inte vara null");
-        }
-
-        // Use detailed fetch för complete deletion validation
-        Optional<WorkDay> workDayOpt = workDayRepository.findById(workDayId);
-        if (workDayOpt.isEmpty()) {
-            throw new WorkDayNotFoundException("WorkDay med ID " + workDayId + " finns inte för deletion");
-        }
-
-        return workDayOpt.get();
-    }
-
-    /**
-     * Validates att deletion är safe och legal enligt business rules.
-     */
-    private void validateWorkDayDeletionSafety(WorkDay workDay, boolean forceDelete) {
-        // Check temporal constraints - cannot delete old WorkDays without special authorization
-        if (!forceDelete) {
-            LocalDate cutoffDate = LocalDate.now().minusDays(MAX_RETROACTIVE_DAYS);
-            if (workDay.getDate().isBefore(cutoffDate)) {
-                throw new WorkDayDeletionException(
-                        "WorkDay för gammal för deletion",
-                        String.format("WorkDays äldre än %d dagar kan inte tas bort utan special authorization",
-                                MAX_RETROACTIVE_DAYS));
-            }
-        }
-
-        // Check om WorkDay has been processed by payroll systems
-        if (hasBeenProcessedByPayroll(workDay) && !forceDelete) {
-            throw new WorkDayDeletionException(
-                    "WorkDay redan processed av payroll",
-                    "Denna arbetsdag har redan bearbetats av lönesystemet och kan inte tas bort");
-        }
-
-        // Check för related audit requirements
-        if (hasActiveAuditTrail(workDay) && !forceDelete) {
-            throw new WorkDayDeletionException(
-                    "Active audit trail prevents deletion",
-                    "Denna arbetsdag är subject till active audit och kan inte tas bort");
-        }
-
-        // Check för project reporting dependencies
-        if (isRequiredForProjectReporting(workDay) && !forceDelete) {
-            throw new WorkDayDeletionException(
-                    "Required för project reporting",
-                    "Denna arbetsdag är required för pågående project reporting och kan inte tas bort");
-        }
-    }
-
-    /**
-     * Prepares WorkDay för safe deletion med cleanup activities.
-     */
-    private void prepareWorkDayForDeletion(WorkDay workDay) {
-        // Archive WorkDay data för audit trail preservation
-        archiveWorkDayForAudit(workDay);
-
-        // Notify related systems av impending deletion
-        notifySystemsOfPendingDeletion(workDay);
-
-        // Update dependent statistics och summaries
-        updateDependentStatisticsForDeletion(workDay);
-    }
-
-    /**
-     * Executes WorkDay deletion med proper cascade handling.
-     */
-    private void executeWorkDayDeletion(WorkDay workDay) {
-        try {
-            // JPA cascade should handle related entities, men we validate explicitly
-            validateCascadeDeletionSafety(workDay);
-
-            // Perform actual deletion
-            workDayRepository.delete(workDay);
-
-            // Explicit flush för immediate constraint validation
-            workDayRepository.flush();
-
-        } catch (Exception e) {
-            throw new WorkDayDeletionException(
-                    "Deletion execution failed",
-                    "Ett tekniskt fel uppstod vid borttagning av arbetsdagen: " + e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Processes post-deletion activities för consistency maintenance.
-     */
-    private void processPostDeletionActivities(WorkDay workDay) {
-        try {
-            // Audit logging för compliance
-            logWorkDayDeletion(workDay);
-
-            // Publish deletion event för system integration
-            publishWorkDayDeletedEvent(workDay);
-
-            // Update cached statistics och summaries
-            refreshRelatedStatistics(workDay);
-
-        } catch (Exception e) {
-            // Log errors men don't fail entire operation för non-critical activities
-            logNonCriticalError("Post-deletion processing", e);
-        }
-    }
-
-    // =================================================================
-    // BUSINESS INTELLIGENCE OCH REPORTING METHODS
-    // =================================================================
-
-    /**
-     * Generates comprehensive monthly report för specified month.
-     *
-     * Denna metod aggregates WorkDay data över en month och produces
-     * detailed business intelligence för management reporting.
-     *
-     * @param year Target year
-     * @param month Target month (1-12)
-     * @return Comprehensive monthly report med metrics och analysis
-     */
-    public MonthlyWorkDayReportDto generateMonthlyReport(int year, int month) {
-        if (month < 1 || month > 12) {
-            throw new IllegalArgumentException("Month måste vara mellan 1 och 12");
-        }
-
-        LocalDate startDate = LocalDate.of(year, month, 1);
-        LocalDate endDate = startDate.withDayOfMonth(startDate.lengthOfMonth());
-
-        // Validate report date range
-        WorkDayValidationUtils.ValidationResult dateRangeResult =
-                WorkDayValidationUtils.validateReportDateRange(startDate, endDate);
-
-        if (!dateRangeResult.isValid()) {
-            throw new IllegalArgumentException("Ogiltigt rapportintervall: " +
-                    dateRangeResult.getMessage().orElse("Okänt datumfel"));
-        }
-
-        // Gather comprehensive data för report generation
-        List<WorkDay> monthWorkDays = workDayRepository.findByDateBetween(startDate, endDate);
-
-        return generateComprehensiveMonthlyReport(monthWorkDays, year, month);
-    }
-
-    /**
-     * Calculates productivity metrics för specified employee över date range.
-     *
-     * @param employeeId Target employee
-     * @param startDate Start av analysis period
-     * @param endDate End av analysis period
-     * @return Detailed productivity analysis
-     */
-    public EmployeeProductivityReportDto analyzeEmployeeProductivity(Long employeeId,
-                                                                     LocalDate startDate,
-                                                                     LocalDate endDate) {
-        // Validate employee exists
-        Employee employee = employeeRepository.findById(employeeId)
-                .orElseThrow(() -> new IllegalArgumentException("Employee med ID " + employeeId + " finns inte"));
-
-        // Validate date range
-        WorkDayValidationUtils.ValidationResult dateRangeResult =
-                WorkDayValidationUtils.validateReportDateRange(startDate, endDate);
-
-        if (!dateRangeResult.isValid()) {
-            throw new IllegalArgumentException("Ogiltigt datumintervall: " +
-                    dateRangeResult.getMessage().orElse("Okänt datumfel"));
-        }
-
-        // Gather employee work data
-        List<WorkDay> employeeWorkDays = workDayRepository.findWorkDaysForEmployee(employeeId)
-                .stream()
-                .filter(wd -> !wd.getDate().isBefore(startDate) && !wd.getDate().isAfter(endDate))
-                .collect(Collectors.toList());
-
-        return analyzeEmployeeProductivityFromWorkDays(employee, employeeWorkDays, startDate, endDate);
-    }
-
-    // =================================================================
-    // HELPER METHODS - BUSINESS LOGIC SUPPORT
-    // =================================================================
-
-    /**
-     * Resolves Employee entities från CreateWorkDayDto input.
-     */
-    private List<Employee> resolveEmployeesFromDto(CreateWorkDayDto createDto) {
-        return createDto.getEmployeeTimes().stream()
-                .map(employeeTimeDto -> {
-                    return employeeRepository.findById(employeeTimeDto.getEmployeeId())
-                            .orElseThrow(() -> new InvalidWorkDayException("Employee inte hittad",
-                                    "Medarbetare med ID " + employeeTimeDto.getEmployeeId() + " finns inte"));
-                })
-                .collect(Collectors.toList());
-    }
-
-    /**
-     * Validates equipment availability för creation scenario.
-     */
-    private void validateEquipmentAvailabilityForCreation(CreateWorkDayDto createDto) {
-        for (CreateWorkDayDto.EquipmentUsageDto equipmentDto : createDto.getEquipmentUsage()) {
-            Equipment equipment = equipmentRepository.findById(equipmentDto.getEquipmentId())
-                    .orElseThrow(() -> new InvalidWorkDayException("Equipment inte hittad",
-                            "Utrustningen med ID " + equipmentDto.getEquipmentId() + " finns inte"));
-
-            if (!equipment.isAvailableForBooking()) {
-                throw new InvalidWorkDayException("Utrustning inte tillgänglig",
-                        "Utrustningen '" + equipment.getName() + "' är inte tillgänglig för bokning");
-            }
-
-            // Check för potential conflicts (simplified - real system skulle be more sophisticated)
-            boolean equipmentAlreadyBooked = equipmentRepository.isEquipmentUsedOnDate(
-                    equipmentDto.getEquipmentId(), createDto.getDate());
-
-            if (equipmentAlreadyBooked) {
-                throw new InvalidWorkDayException("Utrustning redan bokad",
-                        "Utrustningen '" + equipment.getName() + "' är redan bokad för " + createDto.getDate());
-            }
-        }
-    }
-
-    /**
-     * Determines optimal expansion level för single entity retrieval.
-     */
-    private String determineOptimalExpansionForSingleEntity(WorkDay workDay) {
-        // För single entity requests kan vi afford more detailed expansion
-        if (workDay.getEmployeeTimes().size() <= 5 && workDay.getEquipmentUsed().size() <= 5) {
-            return WorkDayMapper.EXPANSION_FULL;
-        } else {
-            return WorkDayMapper.EXPANSION_DETAILED;
-        }
-    }
-
-    /**
-     * Checks om WorkDay can be edited enligt business rules.
-     */
-    private boolean isWorkDayEditable(WorkDay workDay) {
-        // Cannot edit WorkDays older than policy allows
-        LocalDate cutoffDate = LocalDate.now().minusDays(MAX_RETROACTIVE_DAYS);
-        if (workDay.getDate().isBefore(cutoffDate)) {
-            return false;
-        }
-
-        // Cannot edit WorkDays för inactive tasks
-        if (workDay.getTask() != null && !workDay.getTask().canAcceptWorkTime()) {
-            return false;
-        }
-
-        // Cannot edit WorkDays som has been processed by payroll
-        if (hasBeenProcessedByPayroll(workDay)) {
-            return false;
-        }
-
-        return true;
-    }
-
-    // =================================================================
-    // BUSINESS RULE VALIDATION METHODS FÖR UPDATES
-    // =================================================================
-
-    /**
-     * Validates business rules för date change operations.
-     */
-    private void validateDateChangeBusinessRules(WorkDay existingWorkDay, LocalDate newDate) {
-        // Validate new date enligt temporal business rules
-        WorkDayValidationUtils.ValidationResult dateResult =
-                WorkDayValidationUtils.validateWorkDayDate(newDate, false);
-
-        if (!dateResult.isValid()) {
-            throw new InvalidWorkDayTransitionException("Ogiltigt nytt datum",
-                    dateResult.getMessage().orElse("Det nya datumet är inte giltigt"));
-        }
-
-        // Check för conflicts på new date
-        boolean conflictExists = workDayRepository.existsByTaskIdAndDate(
-                existingWorkDay.getTask().getId(), newDate);
-
-        if (conflictExists) {
-            throw new InvalidWorkDayTransitionException("Datum konflikt",
-                    "En arbetsdag för detta uppdrag finns redan på " + newDate);
-        }
-
-        // Validate that date change doesn't violate employee availability
-        for (EmployeeTime employeeTime : existingWorkDay.getEmployeeTimes()) {
-            boolean employeeConflict = employeeRepository.isEmployeeRegisteredForWorkDay(
-                    employeeTime.getEmployee().getId(), newDate, existingWorkDay.getTask().getId());
-
-            if (employeeConflict) {
-                throw new InvalidWorkDayTransitionException("Medarbetarkonflikt på nytt datum",
-                        "Medarbetaren '" + employeeTime.getEmployee().getName() +
-                                "' är redan registrerad för arbete på " + newDate);
-            }
-        }
-    }
-
-    /**
-     * Validates business rules för task change operations.
-     */
-    private void validateTaskChangeBusinessRules(WorkDay existingWorkDay, Long newTaskId) {
-        Task newTask = taskRepository.findById(newTaskId)
-                .orElseThrow(() -> new InvalidWorkDayTransitionException("Task inte hittad",
-                        "Uppdraget med ID " + newTaskId + " finns inte"));
-
-        // Validate new task är suitable för this WorkDay
-        WorkDayValidationUtils.ValidationResult taskResult =
-                WorkDayValidationUtils.validateTaskSuitability(newTask, existingWorkDay.getDate());
-
-        if (!taskResult.isValid()) {
-            throw new InvalidWorkDayTransitionException("Task ej lämplig",
-                    taskResult.getMessage().orElse("Det nya uppdraget är inte lämpligt för denna arbetsdag"));
-        }
-
-        // Check för conflicts med new task
-        boolean conflictExists = workDayRepository.existsByTaskIdAndDate(
-                newTaskId, existingWorkDay.getDate());
-
-        if (conflictExists) {
-            throw new InvalidWorkDayTransitionException("Task konflikt",
-                    "En arbetsdag för det nya uppdraget finns redan på " + existingWorkDay.getDate());
-        }
-
-        // Validate that task change doesn't affect project reporting
-        if (isRequiredForProjectReporting(existingWorkDay)) {
-            throw new InvalidWorkDayTransitionException("Task change affects reporting",
-                    "Denna arbetsdag är required för project reporting och uppdraget kan inte ändras");
-        }
-    }
-
-    /**
-     * Validates business rules för employee time update operations.
-     */
-    private void validateEmployeeTimeUpdateBusinessRules(WorkDay existingWorkDay, UpdateWorkDayDto updateDto) {
-        // Strategy-specific validation
-        switch (updateDto.getEmployeeTimeStrategy()) {
-            case REPLACE_ALL:
-                validateReplaceAllEmployeeTimesBusinessRules(existingWorkDay, updateDto);
-                break;
-            case ADD_OR_UPDATE:
-                validateAddOrUpdateEmployeeTimesBusinessRules(existingWorkDay, updateDto);
-                break;
-            case EXPLICIT_OPERATIONS:
-                validateExplicitEmployeeTimeOperationsBusinessRules(existingWorkDay, updateDto);
-                break;
-            default:
-                // NO_CHANGE requires no validation
-                break;
-        }
-    }
-
-    /**
-     * Validates business rules för equipment update operations.
-     */
-    private void validateEquipmentUpdateBusinessRules(WorkDay existingWorkDay, UpdateWorkDayDto updateDto) {
-        // Strategy-specific validation
-        switch (updateDto.getEquipmentStrategy()) {
-            case REPLACE_ALL:
-                validateReplaceAllEquipmentBusinessRules(existingWorkDay, updateDto);
-                break;
-            case ADD_OR_UPDATE:
-                validateAddOrUpdateEquipmentBusinessRules(existingWorkDay, updateDto);
-                break;
-            case EXPLICIT_OPERATIONS:
-                validateExplicitEquipmentOperationsBusinessRules(existingWorkDay, updateDto);
-                break;
-            default:
-                // NO_CHANGE requires no validation
-                break;
-        }
-    }
-
-    // =================================================================
-    // ENRICHMENT OCH POST-PROCESSING METHODS
-    // =================================================================
-
-    /**
-     * Enriches WorkDay efter update med computed fields och validations.
-     */
-    private void enrichWorkDayForUpdate(WorkDay workDay, UpdateWorkDayDto updateDto) {
-        // Re-validate aggregated metrics efter update
-        double totalHours = workDay.getTotalWorkHours();
-        if (totalHours > MAX_TOTAL_DAILY_HOURS && !updateDto.isOverrideBusinessRules()) {
-            throw new InvalidWorkDayTransitionException("För många arbetstimmar efter update",
-                    String.format("Total arbetstid %.1f timmar överstiger maximum %.1f timmar per dag",
-                            totalHours, MAX_TOTAL_DAILY_HOURS));
-        }
-
-        // Validate individual employee work times efter update
-        for (EmployeeTime employeeTime : workDay.getEmployeeTimes()) {
-            double individualHours = employeeTime.getTotalHours().doubleValue();
-            if (individualHours > MAX_DAILY_HOURS_PER_EMPLOYEE && !updateDto.isOverrideBusinessRules()) {
-                throw new InvalidWorkDayTransitionException("För många timmar per medarbetare efter update",
-                        String.format("Medarbetaren '%s' har %.1f timmar vilket överstiger maximum %.1f timmar per dag",
-                                employeeTime.getEmployee().getName(), individualHours, MAX_DAILY_HOURS_PER_EMPLOYEE));
-            }
-        }
-
-        // Update computed timestamps
-        workDay.setUpdatedAt(LocalDateTime.now());
-    }
-
-    /**
-     * Validates post-update consistency och business rule compliance.
-     */
-    private void validatePostUpdateConsistency(WorkDay workDay) {
-        // Use comprehensive validation för updated WorkDay
-        List<WorkDay> existingWorkDays = workDayRepository.findByDate(workDay.getDate())
-                .stream()
-                .filter(wd -> !wd.getId().equals(workDay.getId())) // Exclude self
-                .collect(Collectors.toList());
-
-        List<WorkDayEquipment> existingEquipment = existingWorkDays.stream()
-                .flatMap(wd -> wd.getEquipmentUsed().stream())
-                .collect(Collectors.toList());
-
-        WorkDayValidationUtils.ComprehensiveValidationResult validationResult =
-                WorkDayValidationUtils.validateCompleteWorkDay(
-                        workDay, false, existingWorkDays, existingEquipment);
-
-        if (!validationResult.isValid()) {
-            throw new InvalidWorkDayTransitionException("Post-update validation misslyckades",
-                    "Uppdateringen resulterade i invalid WorkDay state: " +
-                            String.join("; ", validationResult.getErrorMessages()));
-        }
-    }
-
-    /**
-     * Processes post-update activities för audit och integration.
-     */
-    private void processPostUpdateActivities(WorkDay originalWorkDay, WorkDay updatedWorkDay,
-                                             UpdateWorkDayDto updateDto) {
-        try {
-            // Detailed audit logging för update tracking
-            logWorkDayUpdate(originalWorkDay, updatedWorkDay, updateDto);
-
-            // Publish update event för system integration
-            publishWorkDayUpdatedEvent(originalWorkDay, updatedWorkDay);
-
-            // Update related statistics och cached data
-            updateRelatedStatisticsAfterUpdate(updatedWorkDay);
-
-            // Notify affected systems av changes
-            notifySystemsOfWorkDayUpdate(originalWorkDay, updatedWorkDay);
-
-        } catch (Exception e) {
-            // Log errors men don't fail entire operation
-            logNonCriticalError("Post-update processing", e);
-        }
-    }
-
-    // =================================================================
-    // INTEGRATION OCH EVENT PUBLISHING METHODS
-    // =================================================================
-
-    /**
-     * Publishes WorkDay creation event för system integration.
-     */
-    private void publishWorkDayCreatedEvent(WorkDay workDay) {
-        // I real system: publish to message queue eller event bus
-        logBusinessEvent("WORKDAY_CREATED", workDay.getId(),
-                "WorkDay skapad för " + workDay.getDate() + " på uppdrag " + workDay.getTask().getNumber());
-    }
-
-    /**
-     * Publishes WorkDay update event för system integration.
-     */
-    private void publishWorkDayUpdatedEvent(WorkDay originalWorkDay, WorkDay updatedWorkDay) {
-        // I real system: publish detailed change event
-        logBusinessEvent("WORKDAY_UPDATED", updatedWorkDay.getId(),
-                "WorkDay uppdaterad för " + updatedWorkDay.getDate());
-    }
-
-    /**
-     * Publishes WorkDay deletion event för system integration.
-     */
-    private void publishWorkDayDeletedEvent(WorkDay workDay) {
-        // I real system: publish deletion event
-        logBusinessEvent("WORKDAY_DELETED", workDay.getId(),
-                "WorkDay borttagen för " + workDay.getDate());
-    }
-
-    // =================================================================
-    // PLACEHOLDER METHODS FÖR REAL SYSTEM INTEGRATION
-    // =================================================================
-
-    // Note: Dessa methods representerar integration points som skulle
-    // implementeras fully i ett complete production system
-
-    private void logWorkDayCreation(WorkDay workDay) {
-        // Audit logging implementation
-        System.out.println("[AUDIT] WorkDay created: " + workDay.getId());
-    }
-
-    private void logWorkDayUpdate(WorkDay original, WorkDay updated, UpdateWorkDayDto updateDto) {
-        // Detailed change logging
-        System.out.println("[AUDIT] WorkDay updated: " + updated.getId() + " - " + updateDto.getUpdateReason());
-    }
-
-    private void logWorkDayDeletion(WorkDay workDay) {
-        // Deletion audit logging
-        System.out.println("[AUDIT] WorkDay deleted: " + workDay.getId());
-    }
-
-    private void logBusinessEvent(String eventType, Long workDayId, String description) {
-        System.out.println("[EVENT] " + eventType + " - WorkDay " + workDayId + ": " + description);
-    }
-
-    private void logNonCriticalError(String operation, Exception e) {
-        System.err.println("[ERROR] Non-critical error i " + operation + ": " + e.getMessage());
-    }
-
-    private void updateTaskStatistics(Task task) {
-        // Update task-level statistics
-    }
-
-    private boolean hasBeenProcessedByPayroll(WorkDay workDay) {
-        // Check integration med payroll systems
-        return false; // Simplified för example
-    }
-
-    private boolean hasActiveAuditTrail(WorkDay workDay) {
-        // Check audit requirements
-        return false; // Simplified för example
-    }
-
-    private boolean isRequiredForProjectReporting(WorkDay workDay) {
-        // Check reporting dependencies
-        return false; // Simplified för example
-    }
-
-    private void archiveWorkDayForAudit(WorkDay workDay) {
-        // Archive för audit trail preservation
-    }
-
-    private void notifySystemsOfPendingDeletion(WorkDay workDay) {
-        // Notify integrated systems
-    }
-
-    private void updateDependentStatisticsForDeletion(WorkDay workDay) {
-        // Update statistics innan deletion
-    }
-
-    private void validateCascadeDeletionSafety(WorkDay workDay) {
-        // Validate cascade deletion won't cause constraint violations
-    }
-
-    private void refreshRelatedStatistics(WorkDay workDay) {
-        // Refresh cached statistics efter deletion
-    }
-
-    private void updateRelatedStatisticsAfterUpdate(WorkDay workDay) {
-        // Update statistics efter modification
-    }
-
-    private void notifySystemsOfWorkDayUpdate(WorkDay original, WorkDay updated) {
-        // Notify systems av changes
-    }
-
-    private void handleUpdateExecutionError(WorkDay existingWorkDay, UpdateWorkDayDto updateDto, Exception e) {
-        // Sophisticated error handling och logging
-        logNonCriticalError("Update execution", e);
-    }
-
-    // Strategy-specific validation methods (placeholders för full implementation)
-    private void validateReplaceAllEmployeeTimesBusinessRules(WorkDay workDay, UpdateWorkDayDto updateDto) {
-        // Implement validation för REPLACE_ALL strategy
-    }
-
-    private void validateAddOrUpdateEmployeeTimesBusinessRules(WorkDay workDay, UpdateWorkDayDto updateDto) {
-        // Implement validation för ADD_OR_UPDATE strategy
-    }
-
-    private void validateExplicitEmployeeTimeOperationsBusinessRules(WorkDay workDay, UpdateWorkDayDto updateDto) {
-        // Implement validation för EXPLICIT_OPERATIONS strategy
-    }
-
-    private void validateReplaceAllEquipmentBusinessRules(WorkDay workDay, UpdateWorkDayDto updateDto) {
-        // Implement validation för equipment REPLACE_ALL strategy
-    }
-
-    private void validateAddOrUpdateEquipmentBusinessRules(WorkDay workDay, UpdateWorkDayDto updateDto) {
-        // Implement validation för equipment ADD_OR_UPDATE strategy
-    }
-
-    private void validateExplicitEquipmentOperationsBusinessRules(WorkDay workDay, UpdateWorkDayDto updateDto) {
-        // Implement validation för equipment EXPLICIT_OPERATIONS strategy
-    }
-
-    // Report generation methods (placeholders för full business intelligence implementation)
-    private MonthlyWorkDayReportDto generateComprehensiveMonthlyReport(List<WorkDay> workDays, int year, int month) {
-        throw new UnsupportedOperationException("Full monthly report generation would be implemented here");
-    }
-
-    private EmployeeProductivityReportDto analyzeEmployeeProductivityFromWorkDays(Employee employee,
-                                                                                  List<WorkDay> workDays,
-                                                                                  LocalDate startDate,
-                                                                                  LocalDate endDate) {
-        throw new UnsupportedOperationException("Full productivity analysis would be implemented here");
-    }
-
-    // Placeholder DTOs för return types
-    public static class MonthlyWorkDayReportDto {
-        // Would contain comprehensive monthly metrics
-    }
-
-    public static class EmployeeProductivityReportDto {
-        // Would contain detailed productivity analysis
+        return customerRepository.findById(customerId)
+                .orElseThrow(() -> new RuntimeException(
+                        "Customer med ID " + customerId + " finns inte"));
     }
 }

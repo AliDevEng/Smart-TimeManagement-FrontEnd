@@ -1,5 +1,7 @@
 package com.gardening.timemanagement.exception;
 
+import java.time.LocalDate;
+
 /**
  * Exception som kastas när en arbetsdag med samma Task + Date kombination redan existerar.
  *
@@ -16,8 +18,13 @@ package com.gardening.timemanagement.exception;
  */
 public class DuplicateWorkDayException extends RuntimeException {
 
+    // =================================================================
+    // GRUNDLÄGGANDE KONSTRUKTORER - Dessa täcker de vanligaste scenariona
+    // =================================================================
+
     /**
      * Standard konstruktor med anpassat meddelande.
+     * Används när vi vill ge ett specifikt felmeddelande utan extra kontext.
      */
     public DuplicateWorkDayException(String message) {
         super(message);
@@ -25,18 +32,24 @@ public class DuplicateWorkDayException extends RuntimeException {
 
     /**
      * Konstruktor med orsak för chaining av exceptions.
+     * Används när denna exception orsakas av en annan exception längre ner i stacken.
      */
     public DuplicateWorkDayException(String message, Throwable cause) {
         super(message, cause);
     }
 
+    // =================================================================
+    // BUSINESS-SPECIFIKA KONSTRUKTORER - Dessa ger användarvänlig kontext
+    // =================================================================
+
     /**
      * Konstruktor för den vanligaste situationen - Task ID + Date konflikt.
+     * Denna är den som din WorkDayService troligtvis kommer använda mest.
      *
      * @param taskId ID för uppdraget som redan har en arbetsdag
-     * @param date Datumet som konflikten gäller
+     * @param date Datumet som konflikten gäller (använder LocalDate för typsäkerhet)
      */
-    public DuplicateWorkDayException(Long taskId, String date) {
+    public DuplicateWorkDayException(Long taskId, LocalDate date) {
         super("En arbetsdag för uppdrag " + taskId + " på datum " + date +
                 " existerar redan. Varje uppdrag kan endast ha en arbetsdag per datum. " +
                 "Använd 'update' istället för att lägga till medarbetare eller utrustning.");
@@ -46,25 +59,33 @@ public class DuplicateWorkDayException extends RuntimeException {
      * Konstruktor med användarvänlig information inklusive uppdragsnummer och kundnamn.
      * Detta ger mer kontext för frontend att visa meningsfulla felmeddelanden.
      *
+     * Tänk på detta som att ge användaren en fullständig berättelse om vad som gick fel,
+     * istället för bara tekniska ID-nummer.
+     *
      * @param taskNumber Uppdragsnummer för bättre användarförståelse
      * @param customerName Kundnamn för kontext
      * @param date Datumet som konflikten gäller
      * @param existingWorkDayId ID för den befintliga arbetsdagen
      */
     public DuplicateWorkDayException(String taskNumber, String customerName,
-                                     String date, Long existingWorkDayId) {
+                                     LocalDate date, Long existingWorkDayId) {
         super("Uppdrag " + taskNumber + " (" + customerName + ") har redan en " +
                 "arbetsdag registrerad för " + date + " (ID: " + existingWorkDayId + "). " +
                 "För att lägga till medarbetare eller utrustning, redigera den befintliga " +
                 "arbetsdagen istället för att skapa en ny.");
     }
 
+    // =================================================================
+    // AVANCERADE SCENARIOS - För mer komplexa situationer
+    // =================================================================
+
     /**
      * Konstruktor för batch import scenarios där flera dubbletter upptäcks.
+     * Denna används när systemet importerar många arbetsdagar på en gång.
      *
      * @param conflictCount Antal konflikter som upptäckts
-     * @param firstConflictTask Första konflikterande uppdraget
-     * @param firstConflictDate Första konflikterande datumet
+     * @param firstConflictTask Första konflikterande uppdraget för exemplifiering
+     * @param firstConflictDate Första konflikterande datumet för exemplifiering
      */
     public DuplicateWorkDayException(int conflictCount, String firstConflictTask, String firstConflictDate) {
         super("Batch-import misslyckades: " + conflictCount + " dubletter upptäcktes. " +
@@ -93,38 +114,27 @@ public class DuplicateWorkDayException extends RuntimeException {
 
     /**
      * Konstruktor för automated system scenarios med actionable resolution.
-     * Ger systemet möjlighet att föreslå automatiska lösningar.
+     * Ger systemet möjlighet att föreslå automatiska lösningar till användaren.
+     *
+     * OBSERVERA: Denna konstruktor använder en annan parameterordning för att undvika
+     * signatur-konflikter med andra konstruktorer.
      *
      * @param taskNumber Uppdragsnummer för kontext
+     * @param existingWorkDayId ID för befintlig arbetsdag (flyttad för unik signatur)
      * @param date Konflikterande datum
      * @param resolutionAction Föreslaget sätt att lösa konflikten
-     * @param existingWorkDayId ID för befintlig arbetsdag
      */
-    public DuplicateWorkDayException(String taskNumber, String date,
-                                     String resolutionAction, Long existingWorkDayId) {
+    public DuplicateWorkDayException(String taskNumber, Long existingWorkDayId,
+                                     String date, String resolutionAction) {
         super("Arbetsdag för uppdrag " + taskNumber + " på " + date +
                 " existerar redan (ID: " + existingWorkDayId + "). " +
                 "Systemet föreslår: " + resolutionAction + ". " +
                 "Acceptera förslaget eller välj manuell hantering.");
     }
 
-    /**
-     * Konstruktor för cross-validation scenarios.
-     * När dubblett upptäcks under komplex validation som involverar
-     * flera business rules samtidigt.
-     *
-     * @param taskId ID för uppdraget
-     * @param date Konflikterande datum
-     * @param additionalConstraints Andra business constraints som också bryts
-     * @param suggestedAlternatives Lista med föreslagna alternativ
-     */
-    public DuplicateWorkDayException(Long taskId, String date,
-                                     String additionalConstraints, String suggestedAlternatives) {
-        super("Dubblett-konflikt för uppdrag " + taskId + " på " + date + ". " +
-                "Ytterligare begränsningar: " + additionalConstraints + ". " +
-                "Föreslagna alternativ: " + suggestedAlternatives + ". " +
-                "Kontakta projektledare om inga alternativ fungerar.");
-    }
+    // =================================================================
+    // TEMPORAL OCH COMPLEX SCENARIOS
+    // =================================================================
 
     /**
      * Konstruktor för temporal conflict scenarios.
@@ -144,3 +154,24 @@ public class DuplicateWorkDayException extends RuntimeException {
                 "Använd 'shift conflict resolution' för att hantera automatiskt.");
     }
 }
+
+/*
+ * LÄRDOMAR FRÅN DENNA EXCEPTION-KLASS:
+ *
+ * 1. KONSTRUKTOR-ÖVERLAGRAD: Java tillåter flera konstruktorer med olika parametrar.
+ *    Detta kallas "constructor overloading" och låter oss skapa samma typ av objekt
+ *    med olika mängder av information beroende på situationen.
+ *
+ * 2. SUPER()-ANROP: Varje konstruktor anropar super() för att initiera förälderklassen
+ *    RuntimeException. Detta är obligatoriskt i Java-arv.
+ *
+ 3. BUSINESS CONTEXT: Olika konstruktorer ger olika nivåer av kontext. Enkla
+ *    String-konstruktorer för snabb användning, medan mer komplexa konstruktorer
+ *    ger rik information för användargränssnitt och loggning.
+ *
+ * 4. TYPSÄKERHET: Vi använder Long för ID:n och LocalDate för datum istället för
+ *    String där det är möjligt. Detta förhindrar fel och ger bättre IDE-stöd.
+ *
+ * 5. DOKUMENTATION: Javadoc-kommentarer förklarar när och hur varje konstruktor
+ *    ska användas, vilket hjälper andra utvecklare (och framtida du) att förstå koden.
+ */

@@ -1,6 +1,5 @@
 package com.gardening.timemanagement.entity;
 
-
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
 
@@ -8,19 +7,20 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 
 @Entity
-@Table (name= "work_days")
+@Table(name = "work_days")
 public class WorkDay {
 
     @Id
-    @GeneratedValue (strategy = GenerationType.IDENTITY)
-    private long Id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id; // Ändrat till Long för konsistens
 
     @Column(name = "date", nullable = false)
     @NotNull(message = "Datum måste anges")
     private LocalDate date;
-
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "task_id", nullable = false)
@@ -31,7 +31,6 @@ public class WorkDay {
     @JoinColumn(name = "supervisor_id")
     private Employee supervisor;
 
-    // Anteckningar för arbetsdagen (valfritt)
     @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;
 
@@ -47,164 +46,174 @@ public class WorkDay {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    // En tom konstruktor som krävs av Spring
-    public WorkDay() {
-    }
+    // Konstruktorer
+    public WorkDay() {}
 
-    // En konstruktor för att skapa en arbetsdag med grundläggande information
     public WorkDay(LocalDate date, Task task, Employee supervisor) {
         this.date = date;
         this.task = task;
         this.supervisor = supervisor;
     }
 
-    // Konstruktor utan arbetsledare
     public WorkDay(LocalDate date, Task task) {
         this.date = date;
         this.task = task;
     }
 
-    public long getId() {
-        return Id;
+    // Grundläggande getters och setters
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+
+    public LocalDate getDate() { return date; }
+    public void setDate(LocalDate date) { this.date = date; }
+
+    public Task getTask() { return task; }
+    public void setTask(Task task) { this.task = task; }
+
+    public Employee getSupervisor() { return supervisor; }
+    public void setSupervisor(Employee supervisor) { this.supervisor = supervisor; }
+
+    public String getNotes() { return notes; }
+    public void setNotes(String notes) { this.notes = notes; }
+
+    public List<WorkDayEquipment> getEquipmentUsed() { return equipmentUsed; }
+    public void setEquipmentUsed(List<WorkDayEquipment> equipmentUsed) { this.equipmentUsed = equipmentUsed; }
+
+    public List<EmployeeTime> getEmployeeTimes() { return employeeTimes; }
+    public void setEmployeeTimes(List<EmployeeTime> employeeTimes) { this.employeeTimes = employeeTimes; }
+
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+
+    // Kompatibilitetsmetoder för WorkDayService
+    public String getDescription() {
+        return this.notes != null ? this.notes : "";
     }
 
-    public void setId(long id) {
-        Id = id;
+    public void setDescription(String description) {
+        this.notes = description;
     }
 
-    public LocalDate getDate() {
-        return date;
+    public String getWeatherConditions() {
+        return ""; // Returnerar tom sträng tills vi lägger till detta fält
     }
 
-    public void setDate(LocalDate date) {
-        this.date = date;
+    public void setWeatherConditions(String weatherConditions) {
+        // Ingen implementation än - kan läggas till senare
     }
 
-    public Task getTask() {
-        return task;
-    }
-
-    public void setTask(Task task) {
-        this.task = task;
-    }
-
-    public Employee getSupervisor() {
-        return supervisor;
-    }
-
-    public void setSupervisor(Employee supervisor) {
-        this.supervisor = supervisor;
-    }
-
-    public String getNotes() {
-        return notes;
-    }
-
-    public void setNotes(String notes) {
-        this.notes = notes;
-    }
-
-    public List<WorkDayEquipment> getEquipmentUsed() {
-        return equipmentUsed;
-    }
-
-    public void setEquipmentUsed(List<WorkDayEquipment> equipmentUsed) {
-        this.equipmentUsed = equipmentUsed;
-    }
-
-    public List<EmployeeTime> getEmployeeTimes() {
-        return employeeTimes;
-    }
-
-    public void setEmployeeTimes(List<EmployeeTime> employeeTimes) {
-        this.employeeTimes = employeeTimes;
-    }
-
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
-
-    public LocalDateTime getUpdatedAt() {
-        return updatedAt;
-    }
-
-    public void setUpdatedAt(LocalDateTime updatedAt) {
-        this.updatedAt = updatedAt;
-    }
-
-    // Lägga till utrustning till arbetsdag
-    public void addEquipment (Equipment equipment, int quantity) {
-        WorkDayEquipment workDayEquipment = new WorkDayEquipment (this, equipment, quantity);
-        this.equipmentUsed.add(workDayEquipment);
-    }
-
-    // Tar bort utrustning från arbetsdag
-    public void removeEquipment (Equipment equipment) {
-        this.equipmentUsed.removeIf(wde -> wde.getEquipment().equals(equipment));
-        // wde >>> WorkDayEquipment
-    }
-
-
-
-    // Lägger till en medarbetares arbetstid för denna dag.
-    public void addEmployeeTime(EmployeeTime employeeTime) {
-        employeeTime.setWorkDay(this);
-        this.employeeTimes.add(employeeTime);
-    }
-
-
-    // Tar bort en medarbetares arbetstid från denna dag.
-    public void removeEmployeeTime(EmployeeTime employeeTime) {
-        this.employeeTimes.remove(employeeTime);
-        employeeTime.setWorkDay(null);
-    }
-
-
-    // Beräknar totalt antal arbetstimmar för alla medarbetare denna dag
-    // Exkluderar lunchtid men inkluderar körtid
+    // Affärslogik-metoder
     public double getTotalWorkHours() {
+        if (employeeTimes == null || employeeTimes.isEmpty()) {
+            return 0.0;
+        }
         return employeeTimes.stream()
-                .mapToDouble(et -> et.getTotalHours().doubleValue()) // Lägg till .doubleValue()
+                .filter(Objects::nonNull)
+                .mapToDouble(et -> et.getTotalHours() != null ? et.getTotalHours().doubleValue() : 0.0)
                 .sum();
     }
 
-
-    // Beräknar total körtid för denna arbetsdag
     public double getTotalDriveHours() {
         return employeeTimes.stream()
                 .mapToDouble(et -> et.getIsDriver() ? et.getDriveTimeHours().doubleValue() : 0.0)
                 .sum();
     }
 
-
-    // Räknar antal unika medarbetare som arbetade denna dag
     public int getEmployeeCount() {
-        return employeeTimes.size();
+        return this.employeeTimes != null ? this.employeeTimes.size() : 0;
     }
 
+    public int getEquipmentCount() {
+        return this.equipmentUsed != null ? this.equipmentUsed.size() : 0;
+    }
 
-     // Kontrollerar om en specifik medarbetare redan är registrerad för denna dag.
-     // Förhindrar dubbelregistrering av samma medarbetare.
+    public void addEmployeeTime(EmployeeTime employeeTime) {
+        if (employeeTime == null) {
+            throw new IllegalArgumentException("EmployeeTime cannot be null");
+        }
+        if (this.employeeTimes == null) {
+            this.employeeTimes = new ArrayList<>();
+        }
+
+        // Förhindra dubbletter
+        boolean alreadyExists = this.employeeTimes.stream()
+                .anyMatch(et -> et.getEmployee() != null &&
+                        employeeTime.getEmployee() != null &&
+                        et.getEmployee().getId().equals(employeeTime.getEmployee().getId()));
+
+        if (alreadyExists) {
+            throw new IllegalStateException("Employee already has time entry for this WorkDay");
+        }
+
+        this.employeeTimes.add(employeeTime);
+        employeeTime.setWorkDay(this);
+    }
+
+    public void removeEmployeeTime(EmployeeTime employeeTime) {
+        this.employeeTimes.remove(employeeTime);
+        employeeTime.setWorkDay(null);
+    }
+
+    public void addEquipment(Equipment equipment, int quantity) {
+        if (equipment == null) {
+            throw new IllegalArgumentException("Equipment cannot be null");
+        }
+        if (quantity <= 0) {
+            throw new IllegalArgumentException("Equipment quantity must be positive");
+        }
+        if (this.equipmentUsed == null) {
+            this.equipmentUsed = new ArrayList<>();
+        }
+
+        // Kontrollera om utrustningen redan används
+        Optional<WorkDayEquipment> existing = this.equipmentUsed.stream()
+                .filter(we -> we.getEquipment() != null &&
+                        we.getEquipment().getId().equals(equipment.getId()))
+                .findFirst();
+
+        if (existing.isPresent()) {
+            existing.get().setQuantity(existing.get().getQuantity() + quantity);
+        } else {
+            WorkDayEquipment workDayEquipment = new WorkDayEquipment(this, equipment, quantity);
+            this.equipmentUsed.add(workDayEquipment);
+        }
+    }
+
+    public void removeEquipment(Equipment equipment) {
+        this.equipmentUsed.removeIf(wde -> wde.getEquipment().equals(equipment));
+    }
+
     public boolean hasEmployee(Employee employee) {
-        return employeeTimes.stream()
-                .anyMatch(et -> et.getEmployee().equals(employee));
+        if (employee == null || this.employeeTimes == null) {
+            return false;
+        }
+        return this.employeeTimes.stream()
+                .anyMatch(et -> et.getEmployee() != null &&
+                        et.getEmployee().getId().equals(employee.getId()));
     }
 
-
-    // Kontrollerar om denna arbetsdag kan ta emot ny arbetstidsregistrering
-    // Baserat på uppdragets status och dagens datum
     public boolean canAcceptNewEmployeeTime() {
         return task != null && task.canAcceptWorkTime() && !date.isAfter(LocalDate.now());
+    }
+
+    public boolean isValid() {
+        if (this.date == null || this.task == null) {
+            return false;
+        }
+        if (this.employeeTimes == null || this.employeeTimes.isEmpty()) {
+            return false;
+        }
+        return this.employeeTimes.stream()
+                .allMatch(et -> et != null && et.getEmployee() != null);
     }
 
     @Override
     public String toString() {
         return "WorkDay{" +
-                "id=" + Id +
+                "id=" + id +
                 ", date=" + date +
                 ", task=" + (task != null ? task.getNumber() : "null") +
                 ", supervisor=" + (supervisor != null ? supervisor.getName() : "none") +
@@ -215,4 +224,3 @@ public class WorkDay {
                 '}';
     }
 }
-
